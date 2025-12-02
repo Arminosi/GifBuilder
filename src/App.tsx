@@ -10,7 +10,7 @@ import { FrameData, CanvasConfig, HistorySnapshot } from './types';
 import { FrameItem, FrameCard } from './components/FrameItem';
 import { CanvasEditor } from './components/CanvasEditor';
 import { Timeline } from './components/Timeline';
-import { VirtualFrameList } from './components/VirtualFrameList';
+import { VirtualFrameList, VirtualFrameListHandle } from './components/VirtualFrameList';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
 import { generateFrameZip } from './utils/zipHelper';
@@ -148,6 +148,28 @@ const App: React.FC = () => {
     syncPreviewSelectionRef.current = syncPreviewSelection;
   }, [syncPreviewSelection]);
 
+  // Auto-scroll VirtualFrameList to selected frame
+  useEffect(() => {
+    if (frames.length === 0) return;
+
+    let targetId: string | null = null;
+
+    // If we have a lastSelectedIdRef, use that (it tracks the most recent click/selection)
+    if (lastSelectedIdRef.current && selectedFrameIds.has(lastSelectedIdRef.current)) {
+      targetId = lastSelectedIdRef.current;
+    } else if (selectedFrameIds.size === 1) {
+      // Fallback to the single item in the set
+      targetId = Array.from(selectedFrameIds)[0];
+    }
+
+    if (targetId) {
+      const index = frames.findIndex(f => f.id === targetId);
+      if (index !== -1 && virtualListRef.current) {
+        virtualListRef.current.scrollToItem(index);
+      }
+    }
+  }, [selectedFrameIds, frames]);
+
   // Handle screen resize
   useEffect(() => {
     const checkScreenSize = () => {
@@ -212,6 +234,7 @@ const App: React.FC = () => {
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const insertFileInputRef = useRef<HTMLInputElement>(null);
+  const virtualListRef = useRef<VirtualFrameListHandle>(null);
 
   // DnD Sensors
   const sensors = useSensors(
@@ -470,6 +493,53 @@ const App: React.FC = () => {
     setContextMenu(null);
   };
 
+  const handleContextDownload = async () => {
+    if (selectedFrameIds.size === 0) {
+      setContextMenu(null);
+      return;
+    }
+
+    const selectedFrames = frames
+      .filter(f => selectedFrameIds.has(f.id))
+      .sort((a, b) => frames.indexOf(a) - frames.indexOf(b));
+
+    if (selectedFrames.length === 0) {
+      setContextMenu(null);
+      return;
+    }
+
+    if (selectedFrames.length === 1) {
+      // Download single file
+      const frame = selectedFrames[0];
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(frame.file);
+      link.download = frame.file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // Download zip
+      setIsZipping(true);
+      try {
+        const blob = await generateFrameZip(selectedFrames);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `frames_selection_${new Date().getTime()}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error("Failed to zip frames", error);
+      } finally {
+        setIsZipping(false);
+      }
+    }
+    
+    setContextMenu(null);
+  };
+
   const handleContextDuplicate = () => {
     if (!contextMenu) return;
     const { insertIndex } = contextMenu;
@@ -588,15 +658,21 @@ const App: React.FC = () => {
         try {
           const gifFrames = await parseGifFrames(file);
           if (gifFrames.length > 0) {
-            for (const gifFrame of gifFrames) {
+            for (let j = 0; j < gifFrames.length; j++) {
+              const gifFrame = gifFrames[j];
               if (newFrames.length === 0 && firstImageWidth === 0) {
                 firstImageWidth = gifFrame.width;
                 firstImageHeight = gifFrame.height;
               }
               
+              // Convert blob URL to File object for storage
+              const response = await fetch(gifFrame.url);
+              const blob = await response.blob();
+              const frameFile = new File([blob], `${file.name.replace(/\.gif$/i, '')}_${j}.png`, { type: 'image/png' });
+
               newFrames.push({
                 id: Math.random().toString(36).substr(2, 9),
-                file: file,
+                file: frameFile,
                 previewUrl: gifFrame.url,
                 duration: gifFrame.delay || globalDuration,
                 x: 0,
@@ -744,15 +820,21 @@ const App: React.FC = () => {
         try {
           const gifFrames = await parseGifFrames(file);
           if (gifFrames.length > 0) {
-            for (const gifFrame of gifFrames) {
+            for (let j = 0; j < gifFrames.length; j++) {
+              const gifFrame = gifFrames[j];
               if (newFrames.length === 0 && firstImageWidth === 0) {
                 firstImageWidth = gifFrame.width;
                 firstImageHeight = gifFrame.height;
               }
               
+              // Convert blob URL to File object for storage
+              const response = await fetch(gifFrame.url);
+              const blob = await response.blob();
+              const frameFile = new File([blob], `${file.name.replace(/\.gif$/i, '')}_${j}.png`, { type: 'image/png' });
+
               newFrames.push({
                 id: Math.random().toString(36).substr(2, 9),
-                file: file, // Reference to original file
+                file: frameFile, // Store individual frame file
                 previewUrl: gifFrame.url,
                 duration: gifFrame.delay || globalDuration,
                 x: 0,
@@ -1056,7 +1138,7 @@ const App: React.FC = () => {
     }
   };
 
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
     if (clearFramesConfirm) {
       setAppState(prev => ({ ...prev, frames: [] }));
       setGeneratedGif(null);
@@ -2077,6 +2159,7 @@ const App: React.FC = () => {
                     strategy={rectSortingStrategy}
                   >
                     <VirtualFrameList
+                      ref={virtualListRef}
                       frames={visibleFrames}
                       frameSize={frameSize}
                       compactMode={compactMode}
@@ -2287,6 +2370,14 @@ const App: React.FC = () => {
               ))}
             </div>
           </div>
+
+          <button 
+            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
+            onClick={handleContextDownload}
+          >
+            <Download size={14} />
+            {t.contextMenu.downloadSelected}
+          </button>
 
           <div className="h-px bg-gray-700 my-1"></div>
 
