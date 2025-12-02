@@ -6,7 +6,7 @@
 
 <a name="english"></a>
 
-A powerful, web-based tool for creating and editing animated GIFs, built with React and TypeScript.
+A powerful, web-based tool for creating and editing animated GIFs, built with React and TypeScript~
 
 ## Features
 
