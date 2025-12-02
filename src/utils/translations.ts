@@ -51,7 +51,6 @@ export interface TranslationSchema {
   viewOptions: string;
   frameSize: string;
   compactMode: string;
-  batchSelectionMode: string;
   autoSaved: string;
   clearHistory: string;
   confirmClearHistory: string;
@@ -97,6 +96,7 @@ export interface TranslationSchema {
   };
   frameInfo: string;
   batchMode: string;
+  batchSelectMode: string;
   author: string;
   outputControl: {
     title: string;
@@ -192,7 +192,6 @@ export const translations: Record<Language, TranslationSchema> = {
     viewOptions: "View Options",
     frameSize: "Frame Size",
     compactMode: "Compact Mode",
-    batchSelectionMode: "Batch Selection",
     autoSaved: "Auto-save",
     clearHistory: "Clear History",
     confirmClearHistory: "Click again to confirm",
@@ -242,9 +241,10 @@ export const translations: Record<Language, TranslationSchema> = {
       dropText: "Drop or Click to Upload",
       cancel: "Cancel"
     },
-    frameInfo: "Frame Info",
-    batchMode: "Batch Mode",
-    author: "Created by GifBuilder",
+    frameInfo: 'Frame Info',
+    batchMode: 'Batch Mode',
+    batchSelectMode: 'Batch Select',
+    author: 'Author',
     outputControl: {
       title: "Output Control",
       targetSize: "Target Size",
@@ -333,7 +333,6 @@ export const translations: Record<Language, TranslationSchema> = {
     viewOptions: "视图选项",
     frameSize: "图标大小",
     compactMode: "紧凑模式",
-    batchSelectionMode: "批量选择",
     autoSaved: "自动保存",
     clearHistory: "清空历史",
     confirmClearHistory: "再次点击确认清空",
@@ -385,6 +384,7 @@ export const translations: Record<Language, TranslationSchema> = {
     },
     frameInfo: "帧信息",
     batchMode: "批量模式",
+    batchSelectMode: "批量选择",
     author: "作者",
     outputControl: {
       title: "输出控制",

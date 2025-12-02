@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, Play, Download, Trash2, Undo2, Redo2, 
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, ListChecks
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
 import { FrameData, CanvasConfig, HistorySnapshot } from './types';
 import { FrameItem, FrameCard } from './components/FrameItem';
 import { CanvasEditor } from './components/CanvasEditor';
@@ -94,6 +94,7 @@ const App: React.FC = () => {
   
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
+  const [isBatchSelectMode, setIsBatchSelectMode] = useState(false);
   const [batchInputValues, setBatchInputValues] = useState<{
     x: string;
     y: string;
@@ -110,7 +111,6 @@ const App: React.FC = () => {
   const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
   const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showCanvasEditor, setShowCanvasEditor] = useState(true);
   
@@ -175,7 +175,7 @@ const App: React.FC = () => {
         virtualListRef.current.scrollToItem(index);
       }
     }
-  }, [selectedFrameIds, frames]);
+  }, [selectedFrameIds]); // Removed frames dependency to prevent auto-scroll on parameter updates
 
   // Handle screen resize
   useEffect(() => {
@@ -293,7 +293,7 @@ const App: React.FC = () => {
 
   const handleSelection = (id: string, e: React.MouseEvent) => {
     const { ctrlKey, metaKey, shiftKey } = e;
-    const isMultiSelect = ctrlKey || metaKey || isSelectionMode;
+    const isMultiSelect = ctrlKey || metaKey || isBatchSelectMode;
     const isRangeSelect = shiftKey;
 
     setSelectedFrameIds(prev => {
@@ -2151,14 +2151,17 @@ const App: React.FC = () => {
                    </div>
                    
                    <div className="flex items-center gap-2 shrink-0">
-                     {/* Batch Selection Toggle */}
                      <button 
-                        onClick={() => setIsSelectionMode(!isSelectionMode)}
-                        className={`p-1.5 lg:px-2.5 rounded hover:bg-gray-800 transition-colors flex items-center gap-2 ${isSelectionMode ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
-                        title={t.batchSelectionMode}
+                        onClick={() => setIsBatchSelectMode(!isBatchSelectMode)}
+                        className={`p-1.5 lg:px-2.5 rounded transition-colors flex items-center gap-1.5 ${
+                          isBatchSelectMode 
+                            ? 'bg-blue-600 text-white' 
+                            : 'text-gray-600 hover:bg-blue-900/30 hover:text-blue-400'
+                        }`}
+                        title={t.batchSelectMode}
                      >
-                        <ListChecks size={16} />
-                        <span className="hidden lg:inline text-xs font-medium">{t.batchSelectionMode}</span>
+                        <CheckSquare size={16} />
+                        <span className="hidden lg:inline text-xs font-medium">{t.batchSelectMode}</span>
                      </button>
 
                      <button 
@@ -2173,7 +2176,7 @@ const App: React.FC = () => {
                         }`}
                         title={t.selectionProperties}
                      >
-                        <CheckSquare size={16} />
+                        <SlidersHorizontal size={16} />
                         <span className="hidden lg:inline text-xs font-medium">{t.selectionProperties}</span>
                         {selectedFrameIds.size > 0 && (
                           <span className={`text-xs font-bold px-1.5 rounded-full ${isBatchEditOpen ? 'bg-white/20' : 'bg-blue-500/20'}`}>{selectedFrameIds.size}</span>
@@ -2291,6 +2294,10 @@ const App: React.FC = () => {
                   collisionDetection={closestCenter} 
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
+                  modifiers={[restrictToWindowEdges]}
+                  autoScroll={{
+                    layoutShiftCompensation: false
+                  }}
                 >
                   <SortableContext 
                     items={visibleFrames.map(f => f.id)} 
@@ -2315,7 +2322,7 @@ const App: React.FC = () => {
                   </SortableContext>
                   
                   {/* Custom Drag Overlay for Better Visuals & Multi-drag */}
-                  <DragOverlay modifiers={[restrictToWindowEdges]}>
+                  <DragOverlay>
                     {activeDragFrame ? (
                        selectedFrameIds.has(activeDragFrame.id) && selectedFrameIds.size > 1 ? (
                          // Multi-drag Stack Visual

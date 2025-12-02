@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FrameData } from '../types';
@@ -219,7 +219,7 @@ interface FrameItemProps {
   isGathering?: boolean;
 }
 
-export const FrameItem: React.FC<FrameItemProps> = (props) => {
+const FrameItemComponent: React.FC<FrameItemProps> = (props) => {
   const {
     attributes,
     listeners,
@@ -248,3 +248,49 @@ export const FrameItem: React.FC<FrameItemProps> = (props) => {
     />
   );
 };
+
+export const FrameItem = memo(FrameItemComponent, (prev, next) => {
+  // 1. Compare simple props
+  if (prev.index !== next.index ||
+      prev.isSelected !== next.isSelected ||
+      prev.isMultiDragging !== next.isMultiDragging ||
+      prev.isGathering !== next.isGathering ||
+      prev.compact !== next.compact ||
+      prev.labels !== next.labels || 
+      prev.onRemove !== next.onRemove ||
+      prev.onUpdate !== next.onUpdate ||
+      prev.onReset !== next.onReset ||
+      prev.onSelect !== next.onSelect ||
+      prev.onContextMenu !== next.onContextMenu) {
+    return false;
+  }
+
+  // 2. Compare frame data
+  const f1 = prev.frame;
+  const f2 = next.frame;
+
+  if (f1 === f2) return true;
+
+  // If frame reference changed, check if relevant fields changed
+  // We ignore x, y, width, height, rotation as they don't affect the thumbnail
+  // UNLESS we are in non-compact mode where we show inputs!
+  
+  // Wait! If !compact, we show inputs for x, y, w, h.
+  // If we ignore them, the inputs won't update!
+  
+  if (!next.compact) {
+     // In detailed mode, we MUST update if x,y,w,h changed.
+     // So we can only optimize for compact mode OR if x,y,w,h didn't change.
+     if (f1.x !== f2.x || f1.y !== f2.y || f1.width !== f2.width || f1.height !== f2.height) {
+         return false;
+     }
+  }
+
+  return (
+    f1.id === f2.id &&
+    f1.previewUrl === f2.previewUrl &&
+    f1.colorTag === f2.colorTag &&
+    f1.duration === f2.duration &&
+    f1.file === f2.file
+  );
+});
