@@ -1,229 +1,144 @@
-# GIF Builder
+<div align="center">
 
-[English](#english) | [简体中文](#simplified-chinese)
+# ✨ GIF Builder ✨
 
-**Live Demo**: [gif.qwq.team](https://gif.qwq.team)
+**一个强大、纯前端的 GIF 制作与编辑工具**
+<br>
+**A powerful, client-side GIF creation and editing tool**
 
-<a name="english"></a>
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-3.0-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
-It is powerful, web-based tool for creating and editing animated GIFs, built with React and TypeScript.~
+[简体中文](#cn) | [English](#en)
 
-## Features
+<h3>
+  🚀 <a href="https://gif.qwq.team" target="_blank">Live Demo / 在线演示</a> 🚀
+</h3>
 
-- **Frame Management**:
-  - Batch upload images to create animation frames.
-  - Drag and drop to reorder frames easily.
-  - **Virtualized List**: Optimized rendering for handling thousands of frames smoothly.
-  - Batch edit frame properties (duration, position, size).
-  - Copy/Paste frames support.
-
-- **Canvas Editor**:
-  - Interactive visual editor to position and resize frames on the canvas.
-  - **Zoom Controls**: Zoom in/out or use auto-fit mode for precise editing.
-  - Support for transparent backgrounds or custom background colors.
-  - Real-time preview of frame adjustments.
-
-- **GIF Generation**:
-  - High-performance GIF generation using Web Workers (`gif.js`) to keep the UI responsive.
-  - Customizable output settings:
-    - Canvas dimensions (Width/Height)
-    - Quality
-    - Loop count
-    - Background transparency
-
-- **Productivity Tools**:
-  - **Undo/Redo**: Full history support for all operations.
-  - **Snapshots**: Save and restore your workspace state locally.
-  - **Export**: Download generated GIFs or export all frames as a ZIP archive.
-  - **Internationalization**: Support for English and Chinese (简体中文).
-
-## Tech Stack
-
-- **Frontend Framework**: React 18
-- **Build Tool**: Vite
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Icons**: Lucide React
-- **Key Libraries**:
-  - `@dnd-kit`: For accessible and performant drag-and-drop interactions.
-  - `react-window` & `react-virtualized-auto-sizer`: For efficient list virtualization.
-  - `gif.js`: For client-side GIF encoding.
-  - `jszip`: For zipping frame images.
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v16 or higher recommended)
-- npm or yarn
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd GifBuilder
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-4. Open your browser and visit `http://localhost:5173`.
-
-### Building for Production
-
-To create a production build:
-
-```bash
-npm run build
-```
-
-The built files will be in the `dist` directory.
-
-## Project Structure
-
-```
-GifBuilder/
-├── components/           # React components
-│   ├── CanvasEditor.tsx  # Visual editor for frames
-│   ├── FrameItem.tsx     # Individual frame component
-│   └── VirtualFrameList.tsx # Virtualized list container
-├── hooks/                # Custom hooks
-│   └── useHistory.ts     # Undo/Redo logic
-├── utils/                # Utility functions
-│   ├── gifHelper.ts      # GIF generation logic
-│   ├── storage.ts        # IndexedDB/LocalStorage wrappers
-│   └── translations.ts   # i18n strings
-├── App.tsx               # Main application logic
-└── types.ts              # TypeScript interfaces
-```
-
-## License
-
-MIT
-
-## Author
-
-[Arminosi](https://github.com/Arminosi/GifBuilder/)
+</div>
 
 ---
 
-<a name="simplified-chinese"></a>
+<a name="cn"></a>
 
-# GIF 生成器 (GIF Builder)
+## 📖 项目简介
 
-**在线演示**: [gif.qwq.team](https://gif.qwq.team)
+**GifBuilder** 是一个基于 React 和 TypeScript 构建的现代化 Web 应用。它允许用户在浏览器中直接创建、编辑和生成 GIF 动图。
+**无需上传图片到服务器**，所有处理均在本地完成，确保了数据的安全性和处理的高效性。
 
-一个基于 React 和 TypeScript 构建的强大 Web 端 GIF 制作与编辑工具。
+## ✨ 核心特性
 
-## 功能特性
+| 功能模块 | 详细说明 |
+| :--- | :--- |
+| **🖼️ 帧管理** | • **批量上传**：支持多选图片上传<br>• **拖拽排序**：直观的拖放操作调整帧顺序<br>• **虚拟滚动**：流畅处理数千帧的大型项目<br>• **批量编辑**：统一调整时长、大小、位置 |
+| **🎨 画布编辑** | • **可视化操作**：所见即所得的拖拽编辑<br>• **缩放控制**：滚轮缩放，精细调整<br>• **背景设置**：支持透明或自定义背景色<br>• **实时预览**：即时查看动画效果 |
+| **⚡ 高性能** | • **Web Workers**：多线程生成 GIF，不阻塞 UI<br>• **参数调优**：自定义尺寸、画质、循环次数<br>• **透明处理**：支持指定颜色扣除（透明化） |
+| **🛠️ 生产力** | • **撤销/重做**：完整的历史记录栈<br>• **快照系统**：本地保存工作区，随时恢复<br>• **多格式导出**：导出 GIF 或 ZIP 源码包 |
 
-- **帧管理**:
-  - 批量上传图片创建动画帧。
-  - 拖拽排序帧。
-  - **虚拟化列表**: 优化渲染，流畅处理数千帧。
-  - 批量编辑帧属性（持续时间、位置、尺寸）。
-  - 支持复制/粘贴帧。
+## 🚀 使用指南
 
-- **画布编辑器**:
-  - 交互式可视化编辑器，调整画布上的帧位置和大小。
-  - **缩放控制**: 放大/缩小或使用自动适应模式进行精确编辑。
-  - 支持透明背景或自定义背景色。
-  - 实时预览帧调整。
+1.  **📤 上传素材**
+    点击左侧上传区域或直接将图片拖入网页。
+2.  **🔢 调整顺序**
+    在底部列表中拖拽图片调整播放顺序。
+3.  **✏️ 编辑画面**
+    点击底部的 "显示编辑器" 打开画布，拖拽调整图片位置或大小。
+4.  **💾 生成导出**
+    点击右上角的 "生成" 按钮，设置参数后导出 GIF。
 
-- **GIF 生成**:
-  - 使用 Web Workers (`gif.js`) 进行高性能 GIF 生成，保持 UI 响应。
-  - 可自定义输出设置：
-    - 画布尺寸 (宽/高)
-    - 画质
-    - 循环次数
-    - 背景透明度
+## 🛠️ 本地开发
 
-- **生产力工具**:
-  - **撤销/重做**: 支持所有操作的完整历史记录。
-  - **快照**: 本地保存和恢复工作区状态。
-  - **导出**: 下载生成的 GIF 或将所有帧导出为 ZIP 压缩包。
-  - **国际化**: 支持英语和中文（简体中文）。
+### 环境要求
+*   Node.js (v16+)
+*   npm 或 yarn
 
-## 技术栈
+### 快速开始
 
-- **前端框架**: React 18
-- **构建工具**: Vite
-- **语言**: TypeScript
-- **样式**: Tailwind CSS
-- **图标**: Lucide React
-- **核心库**:
-  - `@dnd-kit`: 用于实现无障碍且高性能的拖拽交互。
-  - `react-window` & `react-virtualized-auto-sizer`: 用于高效的列表虚拟化渲染。
-  - `gif.js`: 用于客户端 GIF 编码。
-  - `jszip`: 用于打包帧图片。
+```bash
+# 1. 克隆项目
+git clone https://github.com/Arminosi/GifBuilder.git
+cd GifBuilder
 
-## 快速开始
+# 2. 安装依赖
+npm install
 
-### 前置要求
+# 3. 启动开发服务
+npm run dev
+```
 
-- Node.js (推荐 v16 或更高版本)
-- npm 或 yarn
+访问 `http://localhost:5173` 开始开发。
 
-### 安装
+### 构建部署
 
-1. 克隆仓库:
-   ```bash
-   git clone <repository-url>
-   cd GifBuilder
-   ```
+```bash
+npm run build
+```
+构建产物位于 `dist` 目录，可直接部署到任何静态文件服务器。
 
-2. 安装依赖:
-   ```bash
-   npm install
-   ```
+## 📂 目录结构
 
-3. 启动开发服务器:
-   ```bash
-   npm run dev
-   ```
+```
+src/
+├── components/       # UI 组件 (编辑器、列表、模态框)
+├── hooks/            # React Hooks (历史记录、状态管理)
+├── utils/            # 工具库 (GIF 编码、文件处理)
+├── App.tsx           # 应用入口
+└── types.ts          # TypeScript 类型定义
+```
 
-4. 打开浏览器访问 `http://localhost:5173`。
+---
 
-### 生产环境构建
+<a name="en"></a>
 
-创建生产环境构建:
+## 📖 Introduction
+
+**GifBuilder** is a modern web application built with React and TypeScript for creating and editing animated GIFs directly in the browser.
+**No server upload required** - all processing happens locally, ensuring data privacy and high performance.
+
+## ✨ Features
+
+| Module | Description |
+| :--- | :--- |
+| **🖼️ Frame Manager** | • **Batch Upload**: Upload multiple images at once<br>• **Drag & Drop**: Reorder frames easily<br>• **Virtual List**: Handle thousands of frames smoothly<br>• **Batch Edit**: Adjust duration, size, position for all frames |
+| **🎨 Canvas Editor** | • **Visual Editor**: WYSIWYG drag-and-drop editing<br>• **Zoom**: Zoom in/out for precision<br>• **Background**: Transparent or custom colors<br>• **Preview**: Real-time animation preview |
+| **⚡ Performance** | • **Web Workers**: Non-blocking GIF generation<br>• **Customization**: Control size, quality, looping<br>• **Transparency**: Chroma key support |
+| **🛠️ Productivity** | • **Undo/Redo**: Full history stack<br>• **Snapshots**: Save/Restore workspace locally<br>• **Export**: Download as GIF or ZIP archive |
+
+## 🚀 Getting Started
+
+### Prerequisites
+*   Node.js (v16+)
+*   npm or yarn
+
+### Installation
+
+```bash
+# 1. Clone repository
+git clone https://github.com/Arminosi/GifBuilder.git
+cd GifBuilder
+
+# 2. Install dependencies
+npm install
+
+# 3. Start development server
+npm run dev
+```
+
+Visit `http://localhost:5173`.
+
+### Build
 
 ```bash
 npm run build
 ```
 
-构建后的文件将位于 `dist` 目录中。
+## 📄 License
 
-## 项目结构
+MIT License.
 
-```
-GifBuilder/
-├── components/           # React 组件
-│   ├── CanvasEditor.tsx  # 画布可视化编辑器
-│   ├── FrameItem.tsx     # 单个帧组件
-│   └── VirtualFrameList.tsx # 虚拟化列表容器
-├── hooks/                # 自定义 Hooks
-│   └── useHistory.ts     # 撤销/重做逻辑
-├── utils/                # 工具函数
-│   ├── gifHelper.ts      # GIF 生成逻辑
-│   ├── storage.ts        # IndexedDB/LocalStorage 封装
-│   └── translations.ts   # 国际化字符串
-├── App.tsx               # 主应用逻辑
-└── types.ts              # TypeScript 接口定义
-```
-
-## 许可证
-
-MIT
-
-## 作者
+## 👤 Author
 
 [Arminosi](https://github.com/Arminosi/GifBuilder/)
