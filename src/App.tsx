@@ -1549,7 +1549,7 @@ const App: React.FC = () => {
   }, [frames, activeDragId, selectedFrameIds, isGathering]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 text-gray-200" onDragEnter={handleDrag}>
+    <div className="fixed inset-0 flex flex-col bg-gray-950 text-gray-200 overflow-hidden overscroll-none" onDragEnter={handleDrag}>
       <style>{`
         .custom-scrollbar {
           scrollbar-width: thin;
@@ -2296,7 +2296,11 @@ const App: React.FC = () => {
                   onDragEnd={handleDragEnd}
                   modifiers={[restrictToWindowEdges]}
                   autoScroll={{
-                    layoutShiftCompensation: false
+                    layoutShiftCompensation: false,
+                    threshold: {
+                      x: 0,
+                      y: 0.1
+                    }
                   }}
                 >
                   <SortableContext 
