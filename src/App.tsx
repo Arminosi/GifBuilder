@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, Play, Download, Trash2, Undo2, Redo2, 
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, ListChecks
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
+import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { FrameData, CanvasConfig, HistorySnapshot } from './types';
 import { FrameItem, FrameCard } from './components/FrameItem';
 import { CanvasEditor } from './components/CanvasEditor';
@@ -86,6 +87,11 @@ const App: React.FC = () => {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [targetSizeMB, setTargetSizeMB] = useState<string>('');
   
+  // Background Removal State
+  const [removeColor, setRemoveColor] = useState<string>('#ffffff');
+  const [tolerance, setTolerance] = useState<number>(10);
+  const [isEyeDropperActive, setIsEyeDropperActive] = useState(false);
+  
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
   const [batchInputValues, setBatchInputValues] = useState<{
@@ -104,6 +110,7 @@ const App: React.FC = () => {
   const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
   const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showCanvasEditor, setShowCanvasEditor] = useState(true);
   
@@ -286,7 +293,7 @@ const App: React.FC = () => {
 
   const handleSelection = (id: string, e: React.MouseEvent) => {
     const { ctrlKey, metaKey, shiftKey } = e;
-    const isMultiSelect = ctrlKey || metaKey;
+    const isMultiSelect = ctrlKey || metaKey || isSelectionMode;
     const isRangeSelect = shiftKey;
 
     setSelectedFrameIds(prev => {
@@ -1408,6 +1415,70 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleRemoveBackground = async () => {
+    if (!removeColor || selectedFrameIds.size === 0) return;
+    
+    // Convert hex to rgb
+    const r = parseInt(removeColor.slice(1, 3), 16);
+    const g = parseInt(removeColor.slice(3, 5), 16);
+    const b = parseInt(removeColor.slice(5, 7), 16);
+    
+    // Threshold calculation: tolerance (0-100) maps to distance
+    // Max Euclidean distance is sqrt(255^2 * 3) approx 441
+    const maxDist = 441;
+    const threshold = (tolerance / 100) * maxDist;
+
+    const newFrames = await Promise.all(frames.map(async (frame) => {
+      if (!selectedFrameIds.has(frame.id)) return frame;
+
+      const img = new Image();
+      img.src = frame.previewUrl;
+      await new Promise(resolve => img.onload = resolve);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = frame.originalWidth;
+      canvas.height = frame.originalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return frame;
+
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const pr = data[i];
+        const pg = data[i + 1];
+        const pb = data[i + 2];
+        
+        const dist = Math.sqrt(
+            Math.pow(pr - r, 2) + 
+            Math.pow(pg - g, 2) + 
+            Math.pow(pb - b, 2)
+        );
+
+        if (dist <= threshold) {
+             data[i + 3] = 0; // Transparent
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) return frame;
+
+      const newFile = new File([blob], frame.file.name, { type: 'image/png' });
+      const newUrl = URL.createObjectURL(newFile);
+
+      return {
+        ...frame,
+        file: newFile,
+        previewUrl: newUrl
+      };
+    }));
+
+    setAppState(prev => ({ ...prev, frames: newFrames }));
+  };
+
   // Find the primary selected frame for the editor (last selected usually)
   const lastSelectedId = Array.from(selectedFrameIds).pop();
   const selectedFrame = frames.find(f => f.id === lastSelectedId) || null;
@@ -1651,10 +1722,10 @@ const App: React.FC = () => {
         <aside 
           className={`bg-gray-900 lg:border-r border-b lg:border-b-0 border-gray-800 flex flex-col overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar transition-all duration-300 ease-in-out z-50 ${
             isLargeScreen 
-              ? (isSidebarOpen ? 'w-0 lg:w-auto opacity-100' : 'w-0 opacity-0 lg:border-r-0 border-b-0 overflow-hidden')
+              ? (isSidebarOpen ? 'opacity-100' : 'opacity-0 lg:border-r-0 border-b-0 overflow-hidden')
               : (isSidebarOpen ? 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl translate-x-0' : 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl -translate-x-full')
           }`}
-          style={{ width: isLargeScreen ? (isSidebarOpen ? `${sidebarWidth}px` : '0') : undefined }}
+          style={{ width: isLargeScreen ? (isSidebarOpen ? sidebarWidth : 0) : '100%' }}
         >
           <div style={{ width: isLargeScreen ? sidebarWidth : '100%' }}>
             <div className="p-5 space-y-6">
@@ -1859,6 +1930,65 @@ const App: React.FC = () => {
                   </button>
                 </div>
                 
+              {/* Background Removal */}
+                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 space-y-3">
+                   <div className="flex items-center justify-between">
+                      <label className="text-xs text-gray-500 block">{t.bgRemoval.title}</label>
+                      <Eraser size={12} className="text-gray-500"/>
+                   </div>
+                   
+                   <div className="flex gap-2 items-center">
+                      <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                         <div 
+                           className="w-4 h-4 rounded border border-gray-500"
+                           style={{ backgroundColor: removeColor }}
+                         />
+                         <input 
+                           type="text" 
+                           value={removeColor}
+                           onChange={(e) => setRemoveColor(e.target.value)}
+                           className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                         />
+                         <input 
+                           type="color" 
+                           value={removeColor}
+                           onChange={(e) => setRemoveColor(e.target.value)}
+                           className="w-6 h-6 opacity-0 absolute cursor-pointer"
+                         />
+                      </div>
+                      <button 
+                        onClick={() => setIsEyeDropperActive(!isEyeDropperActive)}
+                        className={`p-1.5 rounded border transition-colors ${isEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                        title={t.bgRemoval.eyeDropper}
+                      >
+                        <Pipette size={14} />
+                      </button>
+                   </div>
+
+                   <div>
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>{t.bgRemoval.tolerance}</span>
+                        <span>{tolerance}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        value={tolerance} 
+                        onChange={(e) => setTolerance(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      />
+                   </div>
+
+                   <button 
+                     onClick={handleRemoveBackground}
+                     disabled={selectedFrameIds.size === 0}
+                     className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
+                   >
+                     <Eraser size={12} /> {t.bgRemoval.applySelected}
+                   </button>
+                </div>
+
                 <button 
                   onClick={clearAll}
                   className={`w-full flex items-center justify-center gap-2 p-2 rounded border text-xs transition-colors ${
@@ -1871,19 +2001,12 @@ const App: React.FC = () => {
                   {clearFramesConfirm ? t.confirmAction : t.removeAll}
                 </button>
               </div>
-
-              {/* Mobile Footer Info */}
-              {!isLargeScreen && (
-                <div className="pt-4 mt-4 border-t border-gray-800 text-xs text-gray-500 flex items-center justify-center">
-                   <span>{t.author}: <a href="https://github.com/Arminosi/GifBuilder/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Arminosi</a></span>
-                </div>
-              )}
             </div>
           </div>
         </aside>
 
         {/* Sidebar Resizer */}
-        {isSidebarOpen && (
+               {isSidebarOpen && (
           <div
             className="hidden lg:block w-1 bg-gray-950 hover:bg-blue-600 cursor-col-resize z-20 transition-colors border-r border-gray-800"
             onMouseDown={handleSidebarResizeStart}
@@ -1951,6 +2074,11 @@ const App: React.FC = () => {
                  labels={{...t.frame, frameInfo: t.frameInfo}}
                  emptyMessage={t.selectFrameToEdit}
                  isPreview={isPlaying}
+                 isEyeDropperActive={isEyeDropperActive}
+                 onColorPick={(color) => {
+                    setRemoveColor(color);
+                    setIsEyeDropperActive(false);
+                 }}
                />
                {/* Selection Indicator Overlay */}
                {selectedFrameIds.size > 1 && (
@@ -2023,6 +2151,16 @@ const App: React.FC = () => {
                    </div>
                    
                    <div className="flex items-center gap-2 shrink-0">
+                     {/* Batch Selection Toggle */}
+                     <button 
+                        onClick={() => setIsSelectionMode(!isSelectionMode)}
+                        className={`p-1.5 lg:px-2.5 rounded hover:bg-gray-800 transition-colors flex items-center gap-2 ${isSelectionMode ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
+                        title={t.batchSelectionMode}
+                     >
+                        <ListChecks size={16} />
+                        <span className="hidden lg:inline text-xs font-medium">{t.batchSelectionMode}</span>
+                     </button>
+
                      <button 
                         onClick={() => setIsBatchEditOpen(!isBatchEditOpen)}
                         disabled={selectedFrameIds.size === 0}
@@ -2177,7 +2315,7 @@ const App: React.FC = () => {
                   </SortableContext>
                   
                   {/* Custom Drag Overlay for Better Visuals & Multi-drag */}
-                  <DragOverlay>
+                  <DragOverlay modifiers={[restrictToWindowEdges]}>
                     {activeDragFrame ? (
                        selectedFrameIds.has(activeDragFrame.id) && selectedFrameIds.size > 1 ? (
                          // Multi-drag Stack Visual

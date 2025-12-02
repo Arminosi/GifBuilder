@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { FrameData, CanvasConfig } from '../types';
 import { FrameLabels } from '../utils/translations';
-import { Move, ZoomIn, ZoomOut, Maximize, Lock, Unlock, Magnet, Info, ChevronLeft, RotateCw, Target, RefreshCw, StretchHorizontal } from 'lucide-react';
+import { Move, ZoomIn, ZoomOut, Maximize, Lock, Unlock, Magnet, Info, ChevronLeft, RotateCw, Target, RefreshCw, StretchHorizontal, Pipette } from 'lucide-react';
 
 interface CanvasEditorProps {
   frame: FrameData | null;
@@ -11,6 +11,8 @@ interface CanvasEditorProps {
   labels: FrameLabels & { frameInfo: string };
   emptyMessage: string;
   isPreview?: boolean;
+  isEyeDropperActive?: boolean;
+  onColorPick?: (color: string) => void;
 }
 
 type InteractionMode = 'idle' | 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | 'resize-l' | 'resize-r' | 'resize-t' | 'resize-b';
@@ -105,7 +107,17 @@ const EditableStat = ({
   );
 };
 
-export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, config, onUpdate, labels, emptyMessage, isPreview }) => {
+export const CanvasEditor: React.FC<CanvasEditorProps> = ({ 
+  frame, 
+  frameIndex, 
+  config, 
+  onUpdate, 
+  labels, 
+  emptyMessage, 
+  isPreview,
+  isEyeDropperActive,
+  onColorPick
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [isAutoFit, setIsAutoFit] = useState(true);
@@ -536,6 +548,48 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, c
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [frame, onUpdate]);
 
+  const rgbToHex = (r: number, g: number, b: number) => {
+    return ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+
+  const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!isEyeDropperActive || !onColorPick) return;
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const img = e.currentTarget;
+    
+    // Use nativeEvent.offsetX/Y which gives coordinates relative to the target element (the image)
+    // This works even if the image is scaled via CSS width/height
+    const x = e.nativeEvent.offsetX;
+    const y = e.nativeEvent.offsetY;
+    
+    // Display dimensions
+    const displayWidth = img.offsetWidth;
+    const displayHeight = img.offsetHeight;
+    
+    // Natural dimensions
+    const naturalWidth = img.naturalWidth;
+    const naturalHeight = img.naturalHeight;
+    
+    // Map to natural coordinates
+    const originalX = Math.floor((x / displayWidth) * naturalWidth);
+    const originalY = Math.floor((y / displayHeight) * naturalHeight);
+    
+    // Draw to canvas to get color
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        // Draw only the pixel we need
+        ctx.drawImage(img, originalX, originalY, 1, 1, 0, 0, 1, 1);
+        const p = ctx.getImageData(0, 0, 1, 1).data;
+        const hex = "#" + ("000000" + rgbToHex(p[0], p[1], p[2])).slice(-6);
+        onColorPick(hex);
+    }
+  };
+
   if (!frame) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-900 border-b border-gray-800 text-gray-500 text-sm">
@@ -572,12 +626,12 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, c
       >
         {/* Frame Image */}
         <div 
-          className={`absolute group cursor-move touch-none ${interaction || isPreview ? '' : 'transition-all duration-200 ease-out'}`}
+          className={`absolute group ${isEyeDropperActive ? 'cursor-crosshair' : 'cursor-move'} touch-none ${interaction || isPreview ? '' : 'transition-all duration-200 ease-out'}`}
           style={frameStyle}
-          onPointerDown={(e) => !isPreview && handlePointerDown(e, 'move')}
-          onPointerMove={!isPreview ? handlePointerMove : undefined}
-          onPointerUp={!isPreview ? handlePointerUp : undefined}
-          onContextMenu={!isPreview ? handleContextMenu : undefined}
+          onPointerDown={(e) => !isPreview && !isEyeDropperActive && handlePointerDown(e, 'move')}
+          onPointerMove={!isPreview && !isEyeDropperActive ? handlePointerMove : undefined}
+          onPointerUp={!isPreview && !isEyeDropperActive ? handlePointerUp : undefined}
+          onContextMenu={!isPreview && !isEyeDropperActive ? handleContextMenu : undefined}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
@@ -585,7 +639,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, c
           <img 
             src={frame.previewUrl} 
             alt="frame" 
-            className="absolute pointer-events-none"
+            className={`absolute ${isEyeDropperActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
             style={{
                 width: (frame.rotation || 0) % 180 === 90 ? `${frame.height * scale}px` : '100%',
                 height: (frame.rotation || 0) % 180 === 90 ? `${frame.width * scale}px` : '100%',
@@ -595,41 +649,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, c
                 objectFit: 'fill',
                 transition: interaction || isPreview ? 'none' : 'all 0.2s ease-out'
             }}
+            onClick={handleImageClick}
           />
-          
-          {/* Border Highlight */}
-          {!isPreview && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />}
-
-          {/* Resize Handles */}
-          {!isPreview && [
-            { mode: 'resize-tl', pos: '-top-4 -left-4 cursor-nw-resize' },
-            { mode: 'resize-tr', pos: '-top-4 -right-4 cursor-ne-resize' },
-            { mode: 'resize-bl', pos: '-bottom-4 -left-4 cursor-sw-resize' },
-            { mode: 'resize-br', pos: '-bottom-4 -right-4 cursor-se-resize' },
-            // Side Handles
-            { mode: 'resize-l', pos: 'top-1/2 -translate-y-1/2 -left-4 cursor-w-resize' },
-            { mode: 'resize-r', pos: 'top-1/2 -translate-y-1/2 -right-4 cursor-e-resize' },
-            { mode: 'resize-t', pos: 'left-1/2 -translate-x-1/2 -top-4 cursor-n-resize' },
-            { mode: 'resize-b', pos: 'left-1/2 -translate-x-1/2 -bottom-4 cursor-s-resize' },
-          ].map((h) => (
-            <div
-              key={h.mode}
-              className={`absolute w-8 h-8 flex items-center justify-center z-20 ${h.pos} touch-none`}
-              onPointerDown={(e) => handlePointerDown(e, h.mode as InteractionMode)}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            >
-              <div className="w-3 h-3 bg-white border border-blue-600 rounded-full hover:scale-125 transition-transform shadow-sm" />
-            </div>
-          ))}
-          
-          {/* Center Move Handle (Icon) */}
-          {!isPreview && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none">
-               <Move size={24} className="text-white drop-shadow-md" />
-            </div>
-          )}
-
         </div>
       </div>
       
@@ -785,6 +806,27 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({ frame, frameIndex, c
           title="Auto Fit"
         >
           <Maximize size={14} />
+        </button>
+
+        {/* Eye Dropper Tool */}
+        <button 
+          onClick={() => {
+            if (isPreview) return;
+            // Toggle Eye Dropper Active State
+            const newState = !isEyeDropperActive;
+            setIsAutoFit(!newState); // Disable Auto Fit when Eye Dropper is active
+            setInteraction(null); // End any ongoing interactions
+            // Optionally, you can add a callback to handle color picking
+            if (newState && frame) {
+              // Simulate color pick action (you can replace this with real color picking logic)
+              const dummyColor = '#ff0000';
+              onColorPick?.(dummyColor);
+            }
+          }}
+          className={`p-1 rounded transition-colors ${isEyeDropperActive ? 'text-blue-400 bg-blue-900/30' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+          title={isEyeDropperActive ? "Cancel Eye Dropper" : "Pick Color"}
+        >
+          <Pipette size={14} />
         </button>
       </div>
     </div>
