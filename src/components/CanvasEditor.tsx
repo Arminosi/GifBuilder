@@ -651,6 +651,50 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             }}
             onClick={handleImageClick}
           />
+
+          {/* Resize Handles & Border */}
+          {!isPreview && !isEyeDropperActive && (
+            <>
+              {/* Border */}
+              <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
+              
+              {/* Corners */}
+              <div 
+                className="absolute -left-1.5 -top-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-nw-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-tl')}
+              />
+              <div 
+                className="absolute -right-1.5 -top-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-ne-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-tr')}
+              />
+              <div 
+                className="absolute -left-1.5 -bottom-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-sw-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-bl')}
+              />
+              <div 
+                className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-se-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-br')}
+              />
+
+              {/* Edges */}
+              <div 
+                className="absolute left-1/2 -top-1.5 w-3 h-3 -ml-1.5 bg-white border border-blue-500 rounded-full cursor-n-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-t')}
+              />
+              <div 
+                className="absolute left-1/2 -bottom-1.5 w-3 h-3 -ml-1.5 bg-white border border-blue-500 rounded-full cursor-s-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-b')}
+              />
+              <div 
+                className="absolute -left-1.5 top-1/2 w-3 h-3 -mt-1.5 bg-white border border-blue-500 rounded-full cursor-w-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-l')}
+              />
+              <div 
+                className="absolute -right-1.5 top-1/2 w-3 h-3 -mt-1.5 bg-white border border-blue-500 rounded-full cursor-e-resize z-10"
+                onPointerDown={(e) => handlePointerDown(e, 'resize-r')}
+              />
+            </>
+          )}
         </div>
       </div>
       
