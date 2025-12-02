@@ -98,6 +98,12 @@ export interface TranslationSchema {
   frameInfo: string;
   batchMode: string;
   author: string;
+  outputControl: {
+    title: string;
+    targetSize: string;
+    unlimited: string;
+    autoAdjust: string;
+  };
   settings: string;
   history: string;
   noHistory: string;
@@ -229,6 +235,12 @@ export const translations: Record<Language, TranslationSchema> = {
     frameInfo: "Frame Info",
     batchMode: "Batch Mode",
     author: "Created by GifBuilder",
+    outputControl: {
+      title: "Output Control",
+      targetSize: "Target Size",
+      unlimited: "Unlimited",
+      autoAdjust: "Will automatically adjust quality to meet size limit"
+    },
     settings: "Settings",
     historyActions: {
       addFrames: "Add Frames",
@@ -354,6 +366,12 @@ export const translations: Record<Language, TranslationSchema> = {
     frameInfo: "帧信息",
     batchMode: "批量模式",
     author: "作者",
+    outputControl: {
+      title: "输出控制",
+      targetSize: "目标大小",
+      unlimited: "不限制",
+      autoAdjust: "设置后将自动调整质量以满足大小限制"
+    },
     settings: "设置",
     history: "操作历史",
     noHistory: "暂无历史记录",

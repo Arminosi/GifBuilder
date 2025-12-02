@@ -1680,19 +1680,19 @@ const App: React.FC = () => {
 
                 {/* Output Control */}
                 <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 space-y-2">
-                   <label className="text-xs text-gray-500 block">输出控制</label>
+                   <label className="text-xs text-gray-500 block">{t.outputControl.title}</label>
                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">目标大小:</span>
+                      <span className="text-xs text-gray-400">{t.outputControl.targetSize}:</span>
                       <input 
                         type="number" 
-                        placeholder="不限制"
+                        placeholder={t.outputControl.unlimited}
                         value={targetSizeMB}
                         onChange={(e) => setTargetSizeMB(e.target.value)}
                         className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm min-w-0"
                       />
                       <span className="text-xs text-gray-400">MB</span>
                    </div>
-                   <p className="text-[10px] text-gray-500">设置后将自动调整质量以满足大小限制</p>
+                   <p className="text-[10px] text-gray-500">{t.outputControl.autoAdjust}</p>
                 </div>
               </div>
 
