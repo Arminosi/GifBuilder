@@ -1,5 +1,3 @@
-
-
 export type Language = 'en' | 'zh';
 
 export interface FrameLabels {
@@ -53,6 +51,7 @@ export interface TranslationSchema {
   viewOptions: string;
   frameSize: string;
   compactMode: string;
+  batchSelectionMode: string;
   autoSaved: string;
   clearHistory: string;
   confirmClearHistory: string;
@@ -133,6 +132,14 @@ export interface TranslationSchema {
     completed: string;
     preparing: string;
   };
+  bgRemoval: {
+    title: string;
+    pickColor: string;
+    tolerance: string;
+    applySelected: string;
+    eyeDropper: string;
+    remove: string;
+  };
   preview: {
     play: string;
     pause: string;
@@ -185,6 +192,7 @@ export const translations: Record<Language, TranslationSchema> = {
     viewOptions: "View Options",
     frameSize: "Frame Size",
     compactMode: "Compact Mode",
+    batchSelectionMode: "Batch Selection",
     autoSaved: "Auto-save",
     clearHistory: "Clear History",
     confirmClearHistory: "Click again to confirm",
@@ -269,6 +277,14 @@ export const translations: Record<Language, TranslationSchema> = {
       completed: "Generation complete!",
       preparing: "Preparing..."
     },
+    bgRemoval: {
+      title: "Background Removal",
+      pickColor: "Pick Color",
+      tolerance: "Tolerance",
+      applySelected: "Apply to Selected",
+      eyeDropper: "Eye Dropper",
+      remove: "Remove Background"
+    },
     preview: {
       play: "Play Preview",
       pause: "Pause Preview"
@@ -317,6 +333,7 @@ export const translations: Record<Language, TranslationSchema> = {
     viewOptions: "视图选项",
     frameSize: "图标大小",
     compactMode: "紧凑模式",
+    batchSelectionMode: "批量选择",
     autoSaved: "自动保存",
     clearHistory: "清空历史",
     confirmClearHistory: "再次点击确认清空",
@@ -402,6 +419,14 @@ export const translations: Record<Language, TranslationSchema> = {
       compressionAttempt: "[压缩 {0}] ",
       completed: "生成完成！",
       preparing: "准备开始..."
+    },
+    bgRemoval: {
+      title: "背景移除",
+      pickColor: "选择颜色",
+      tolerance: "容差",
+      applySelected: "应用到选中帧",
+      eyeDropper: "吸管工具",
+      remove: "移除背景"
     },
     preview: {
       play: "播放预览",
