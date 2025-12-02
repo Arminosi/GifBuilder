@@ -1,10 +1,14 @@
-import React, { memo } from 'react';
+import React, { memo, forwardRef, useImperativeHandle, useRef } from 'react';
 import { FixedSizeList as List, areEqual } from 'react-window';
 import type { ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FrameData } from '../types';
 import { FrameItem } from './FrameItem';
 import { FrameLabels } from '../utils/translations';
+
+export interface VirtualFrameListHandle {
+  scrollToItem: (index: number) => void;
+}
 
 interface VirtualFrameListProps {
   frames: FrameData[];
@@ -87,7 +91,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
   );
 }, areEqual);
 
-export const VirtualFrameList: React.FC<VirtualFrameListProps> = ({
+export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameListProps>(({
   frames,
   frameSize,
   compactMode,
@@ -101,7 +105,18 @@ export const VirtualFrameList: React.FC<VirtualFrameListProps> = ({
   activeDragId,
   isGathering,
   isLayoutAnimating
-}) => {
+}, ref) => {
+  const listRef = useRef<List>(null);
+  const columnCountRef = useRef<number>(1);
+
+  useImperativeHandle(ref, () => ({
+    scrollToItem: (index: number) => {
+      if (listRef.current) {
+        const rowIndex = Math.floor(index / columnCountRef.current);
+        listRef.current.scrollToItem(rowIndex, 'smart');
+      }
+    }
+  }));
   
   // Estimate item height based on frameSize and mode
   // Image is square (width = frameWidth >= frameSize)
@@ -119,6 +134,7 @@ export const VirtualFrameList: React.FC<VirtualFrameListProps> = ({
           const availableWidth = width - (PADDING * 2); 
           const columnCount = Math.floor((availableWidth + GAP) / (frameSize + GAP));
           const safeColumnCount = Math.max(1, columnCount);
+          columnCountRef.current = safeColumnCount;
           
           // Calculate actual width per item to fill space
           const frameWidth = (availableWidth - (safeColumnCount - 1) * GAP) / safeColumnCount;
@@ -134,6 +150,7 @@ export const VirtualFrameList: React.FC<VirtualFrameListProps> = ({
 
           return (
             <List
+              ref={listRef}
               height={height}
               itemCount={rowCount}
               itemSize={itemHeight}
@@ -164,4 +181,4 @@ export const VirtualFrameList: React.FC<VirtualFrameListProps> = ({
       </AutoSizer>
     </div>
   );
-};
+});

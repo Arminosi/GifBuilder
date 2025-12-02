@@ -85,6 +85,7 @@ export interface TranslationSchema {
     alignCenter: string;
     fitCanvas: string;
     fillCanvas: string;
+    downloadSelected: string;
     deleteSelected: string;
     cancel: string;
     setColor: string;
@@ -222,6 +223,7 @@ export const translations: Record<Language, TranslationSchema> = {
       alignCenter: "Align Center",
       fitCanvas: "Fit Canvas (Keep Ratio)",
       fillCanvas: "Fill Canvas (Stretch)",
+      downloadSelected: "Download Selected",
       deleteSelected: "Delete Selected",
       cancel: "Cancel",
       setColor: "Set Color Tag",
@@ -353,6 +355,7 @@ export const translations: Record<Language, TranslationSchema> = {
       alignCenter: "居中对齐",
       fitCanvas: "比例缩放适应画布",
       fillCanvas: "拉伸缩放适应画布",
+      downloadSelected: "下载选中帧",
       deleteSelected: "删除选中帧",
       cancel: "取消",
       setColor: "设置颜色标记",
