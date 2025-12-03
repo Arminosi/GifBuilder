@@ -118,7 +118,8 @@ export const generateGIF = async (
   onProgress: (progress: number) => void,
   targetSizeMB?: number,
   onStatus?: (status: string) => void,
-  texts?: StatusTexts
+  texts?: StatusTexts,
+  customTransparentColor?: string | null
 ): Promise<Blob> => {
   
   const t = texts || {
@@ -146,7 +147,17 @@ export const generateGIF = async (
       
       // Determine transparent key color if needed
       let transparentKey = { hex: 0x00FF00, str: '#00FF00' };
-      if (currentConfig.transparent) {
+      
+      if (customTransparentColor) {
+          // Use user specified color
+          const r = parseInt(customTransparentColor.slice(1, 3), 16);
+          const g = parseInt(customTransparentColor.slice(3, 5), 16);
+          const b = parseInt(customTransparentColor.slice(5, 7), 16);
+          transparentKey = {
+              hex: (r << 16) | (g << 8) | b,
+              str: customTransparentColor
+          };
+      } else if (currentConfig.transparent) {
           transparentKey = await findUnusedColor(frames, onStatus);
       }
 
@@ -158,7 +169,8 @@ export const generateGIF = async (
           height: currentConfig.height,
           workerScript: workerScript,
           repeat: currentConfig.repeat,
-          // If transparent is requested, use our key color
+          // If transparent is requested, use our key color. 
+          // If custom color is set but we are in solid mode, we do NOT want final GIF transparency (we want composition).
           transparent: currentConfig.transparent ? (transparentKey.hex as any) : null,
           background: currentConfig.transparent ? undefined : currentConfig.backgroundColor
         });
@@ -205,6 +217,33 @@ export const generateGIF = async (
                  ctx.fillRect(0, 0, canvas.width, canvas.height);
               }
 
+              // Prepare image to draw (handle custom transparency if needed)
+              let imageToDraw: CanvasImageSource = img;
+
+              if (customTransparentColor) {
+                  // Create temp canvas to process image
+                  const tempCanvas = document.createElement('canvas');
+                  tempCanvas.width = img.width;
+                  tempCanvas.height = img.height;
+                  const tempCtx = tempCanvas.getContext('2d');
+                  if (tempCtx) {
+                      tempCtx.drawImage(img, 0, 0);
+                      const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                      const data = imageData.data;
+                      const rTarget = parseInt(customTransparentColor.slice(1, 3), 16);
+                      const gTarget = parseInt(customTransparentColor.slice(3, 5), 16);
+                      const bTarget = parseInt(customTransparentColor.slice(5, 7), 16);
+
+                      for (let k = 0; k < data.length; k += 4) {
+                          if (data[k] === rTarget && data[k+1] === gTarget && data[k+2] === bTarget) {
+                              data[k+3] = 0;
+                          }
+                      }
+                      tempCtx.putImageData(imageData, 0, 0);
+                      imageToDraw = tempCanvas;
+                  }
+              }
+
               // Draw image at specified position and size
               // We need to scale the frame position/size if the canvas size has changed (for compression)
               const scaleX = currentConfig.width / config.width;
@@ -218,13 +257,13 @@ export const generateGIF = async (
                 ctx.rotate((frame.rotation * Math.PI) / 180);
                 
                 if (Math.abs(frame.rotation % 180) === 90) {
-                   ctx.drawImage(img, (-frame.height / 2) * scaleX, (-frame.width / 2) * scaleY, frame.height * scaleX, frame.width * scaleY);
+                   ctx.drawImage(imageToDraw, (-frame.height / 2) * scaleX, (-frame.width / 2) * scaleY, frame.height * scaleX, frame.width * scaleY);
                 } else {
-                   ctx.drawImage(img, (-frame.width / 2) * scaleX, (-frame.height / 2) * scaleY, frame.width * scaleX, frame.height * scaleY);
+                   ctx.drawImage(imageToDraw, (-frame.width / 2) * scaleX, (-frame.height / 2) * scaleY, frame.width * scaleX, frame.height * scaleY);
                 }
                 ctx.restore();
               } else {
-                ctx.drawImage(img, frame.x * scaleX, frame.y * scaleY, frame.width * scaleX, frame.height * scaleY);
+                ctx.drawImage(imageToDraw, frame.x * scaleX, frame.y * scaleY, frame.width * scaleX, frame.height * scaleY);
               }
 
               gif.addFrame(ctx, {

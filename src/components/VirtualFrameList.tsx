@@ -27,6 +27,8 @@ interface VirtualFrameListProps {
   isLayoutAnimating?: boolean;
   layoutMode?: 'auto' | 'vertical' | 'horizontal';
   onCompactModeChange?: (isCompact: boolean) => void;
+  transparentColor?: string;
+  isTransparentEnabled?: boolean;
 }
 
 const GAP = 16; // gap-4 (1rem)
@@ -50,7 +52,9 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     activeDragId,
     isGathering,
     isLayoutAnimating,
-    isHorizontal
+    isHorizontal,
+    transparentColor,
+    isTransparentEnabled
   } = data;
 
   const startIndex = index * columnCount;
@@ -92,6 +96,8 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             isGathering={isGathering}
             frameWidth={frameWidth}
             isHorizontal={isHorizontal}
+            transparentColor={transparentColor}
+            isTransparentEnabled={isTransparentEnabled}
           />
         </div>
       ))}
@@ -115,7 +121,9 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
   isGathering,
   isLayoutAnimating,
   layoutMode = 'auto',
-  onCompactModeChange
+  onCompactModeChange,
+  transparentColor,
+  isTransparentEnabled
 }, ref) => {
   const listRef = useRef<List>(null);
   const columnCountRef = useRef<number>(1);
@@ -209,7 +217,9 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 activeDragId,
                 isGathering,
                 isLayoutAnimating,
-                isHorizontal
+                isHorizontal,
+                transparentColor,
+                isTransparentEnabled
               }}
             >
               {Row}

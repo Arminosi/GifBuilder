@@ -148,6 +148,11 @@ export interface TranslationSchema {
     applySelected: string;
     eyeDropper: string;
     remove: string;
+    gifTransparent: string;
+    enableGifTransparent: string;
+    gifTransparentInfo: string;
+    auto: string;
+    manual: string;
   };
   preview: {
     play: string;
@@ -170,7 +175,7 @@ export const translations: Record<Language, TranslationSchema> = {
     width: "Width (px)",
     height: "Height (px)",
     transparent: "Transparent Background",
-    backgroundColor: "Background Color",
+    backgroundColor: "Solid Color",
     batchActions: "Batch Actions",
     autoFit: "Auto Fit Frames",
     fitMode: "Fit Mode",
@@ -301,7 +306,12 @@ export const translations: Record<Language, TranslationSchema> = {
       tolerance: "Tolerance",
       applySelected: "Apply to Selected",
       eyeDropper: "Eye Dropper",
-      remove: "Remove Background"
+      remove: "Remove Background",
+      gifTransparent: "Transparency Key",
+      enableGifTransparent: "Enable GIF Transparency",
+      gifTransparentInfo: "Selected color will be transparent in output GIF",
+      auto: "Auto",
+      manual: "Manual"
     },
     preview: {
       play: "Play Preview",
@@ -320,7 +330,7 @@ export const translations: Record<Language, TranslationSchema> = {
     width: "宽度 (px)",
     height: "高度 (px)",
     transparent: "透明背景",
-    backgroundColor: "背景颜色",
+    backgroundColor: "纯色背景",
     batchActions: "批量操作",
     autoFit: "自动缩放",
     fitMode: "缩放模式",
@@ -453,7 +463,12 @@ export const translations: Record<Language, TranslationSchema> = {
       tolerance: "容差",
       applySelected: "应用到选中帧",
       eyeDropper: "吸管工具",
-      remove: "移除背景"
+      remove: "移除背景",
+      gifTransparent: "透明色指定",
+      enableGifTransparent: "启用 GIF 透明色",
+      gifTransparentInfo: "选中的颜色将在输出的 GIF 中变为透明",
+      auto: "自动",
+      manual: "手动"
     },
     preview: {
       play: "播放预览",

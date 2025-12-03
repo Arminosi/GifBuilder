@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { FrameData } from '../types';
 import { X, GripVertical, RotateCcw } from 'lucide-react';
 import { FrameLabels } from '../utils/translations';
+import { TransparentImage } from './TransparentImage';
 
 interface FrameCardProps {
   frame: FrameData;
@@ -25,6 +26,8 @@ interface FrameCardProps {
   setNodeRef?: (node: HTMLElement | null) => void;
   frameWidth?: number;
   isHorizontal?: boolean;
+  transparentColor?: string | null;
+  isTransparentEnabled?: boolean;
 }
 
 // Helper component for buffered input
@@ -115,26 +118,27 @@ const BufferedInput = ({
 };
 
 // Pure presentation component
-export const FrameCard: React.FC<FrameCardProps> = ({
-  frame,
-  index,
-  onRemove,
-  onUpdate,
-  onReset,
-  labels,
-  confirmResetText = "Confirm?",
-  compact,
-  isSelected,
-  onSelect,
-  onContextMenu,
-  isDragging,
-  style,
-  dragListeners,
-  dragAttributes,
-  setNodeRef,
-  frameWidth,
-  isHorizontal
-}) => {
+export const FrameCard: React.FC<FrameCardProps> = (props) => {
+  const {
+    frame,
+    index,
+    onRemove,
+    onUpdate,
+    onReset,
+    labels,
+    confirmResetText = "Confirm?",
+    compact,
+    isSelected,
+    onSelect,
+    onContextMenu,
+    isDragging,
+    style,
+    dragListeners,
+    dragAttributes,
+    setNodeRef,
+    frameWidth,
+    isHorizontal
+  } = props;
   const [resetConfirm, setResetConfirm] = useState(false);
 
   return (
@@ -212,11 +216,13 @@ export const FrameCard: React.FC<FrameCardProps> = ({
 
       <div className={`flex ${isHorizontal ? 'flex-row gap-3 h-full min-h-0' : 'flex-col'}`}>
         <div className={`relative bg-gray-900 rounded border border-gray-700 overflow-hidden flex items-center justify-center ${isHorizontal ? 'flex-1 h-full' : (compact ? 'aspect-square mb-1' : 'aspect-square')}`}>
-          <img 
+          <TransparentImage 
             src={frame.previewUrl} 
             alt={`Frame ${index}`} 
             draggable={false}
             className="max-w-full max-h-full object-contain pointer-events-none" 
+            transparentColor={props.transparentColor}
+            enabled={props.isTransparentEnabled}
           />
           <div className="absolute bottom-0 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-tr">
             #{index + 1}
@@ -339,7 +345,9 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
       prev.onUpdate !== next.onUpdate ||
       prev.onReset !== next.onReset ||
       prev.onSelect !== next.onSelect ||
-      prev.onContextMenu !== next.onContextMenu) {
+      prev.onContextMenu !== next.onContextMenu ||
+      prev.transparentColor !== next.transparentColor ||
+      prev.isTransparentEnabled !== next.isTransparentEnabled) {
     return false;
   }
 
