@@ -98,6 +98,9 @@ export interface TranslationSchema {
   batchMode: string;
   batchSelectMode: string;
   author: string;
+  localProcessing: string;
+  linkSelection: string;
+  unlinkSelection: string;
   outputControl: {
     title: string;
     targetSize: string;
@@ -242,9 +245,12 @@ export const translations: Record<Language, TranslationSchema> = {
       cancel: "Cancel"
     },
     frameInfo: 'Frame Info',
-    batchMode: 'Batch Mode',
-    batchSelectMode: 'Batch Select',
-    author: 'Author',
+    batchMode: "Batch Mode",
+    batchSelectMode: "Batch Select",
+    author: "Author",
+    localProcessing: "All operations are processed locally in your browser. No data is uploaded to any server.",
+    linkSelection: "Link Selection",
+    unlinkSelection: "Unlink Selection",
     outputControl: {
       title: "Output Control",
       targetSize: "Target Size",
@@ -386,6 +392,9 @@ export const translations: Record<Language, TranslationSchema> = {
     batchMode: "批量模式",
     batchSelectMode: "批量选择",
     author: "作者",
+    localProcessing: "所有操作均在本地浏览器完成，数据不会上传至服务器。",
+    linkSelection: "关联选中",
+    unlinkSelection: "取消关联",
     outputControl: {
       title: "输出控制",
       targetSize: "目标大小",

@@ -159,6 +159,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (frames.length === 0) return;
 
+    // Prevent auto-scroll if the frame list is too small to avoid layout shifts
+    // This helps prevent the "whole page scroll" issue when the list height is very small
+    const listContainer = document.getElementById('virtual-list-container');
+    if (listContainer && listContainer.clientHeight < 100) {
+       return;
+    }
+
     let targetId: string | null = null;
 
     // If we have a lastSelectedIdRef, use that (it tracks the most recent click/selection)
@@ -172,10 +179,26 @@ const App: React.FC = () => {
     if (targetId) {
       const index = frames.findIndex(f => f.id === targetId);
       if (index !== -1 && virtualListRef.current) {
-        virtualListRef.current.scrollToItem(index);
+        // Use requestAnimationFrame to ensure layout is stable
+        requestAnimationFrame(() => {
+           virtualListRef.current?.scrollToItem(index);
+        });
       }
     }
   }, [selectedFrameIds]); // Removed frames dependency to prevent auto-scroll on parameter updates
+
+  // Force reset scroll position on frame changes to prevent layout shift
+  useEffect(() => {
+     if (frames.length > 0) {
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+        const root = document.getElementById('root');
+        if (root) root.scrollTop = 0;
+        const mainLayout = document.getElementById('main-layout-container');
+        if (mainLayout) mainLayout.scrollTop = 0;
+     }
+  }, [frames.length]);
 
   // Handle screen resize
   useEffect(() => {
@@ -902,6 +925,14 @@ const App: React.FC = () => {
         setSelectedFrameIds(new Set([newFrames[0].id]));
         lastSelectedIdRef.current = newFrames[0].id;
       }
+
+      // Force reset scroll after a short delay to allow for layout updates
+      // This fixes the issue where the page scrolls up when importing the first image
+      setTimeout(() => {
+         window.scrollTo(0, 0);
+         const mainLayout = document.getElementById('main-layout-container');
+         if (mainLayout) mainLayout.scrollTop = 0;
+      }, 50);
     }
 
     if (fileInputRef.current) {
@@ -1549,7 +1580,7 @@ const App: React.FC = () => {
   }, [frames, activeDragId, selectedFrameIds, isGathering]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 text-gray-200" onDragEnter={handleDrag}>
+    <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden" onDragEnter={handleDrag}>
       <style>{`
         .custom-scrollbar {
           scrollbar-width: thin;
@@ -1692,7 +1723,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden relative">
+      <div id="main-layout-container" className="flex flex-col lg:flex-row flex-1 overflow-hidden relative min-h-0">
         
         {/* Drag Overlay */}
         {dragActive && (
@@ -2001,6 +2032,12 @@ const App: React.FC = () => {
                   {clearFramesConfirm ? t.confirmAction : t.removeAll}
                 </button>
               </div>
+
+              {/* Author Info */}
+              <div className="pt-4 border-t border-gray-800 text-center space-y-1">
+                 <span className="text-xs text-gray-500 block">{t.author}: <a href="https://github.com/Arminosi/GifBuilder/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Arminosi</a></span>
+                 <p className="text-[10px] text-gray-600 px-2">{t.localProcessing}</p>
+              </div>
             </div>
           </div>
         </aside>
@@ -2014,7 +2051,7 @@ const App: React.FC = () => {
         )}
 
         {/* Center: Split View (Canvas Editor + Frame List) */}
-        <main className={`flex-1 flex flex-col min-w-0 bg-gray-950`}>
+        <main className={`flex-1 flex flex-col min-w-0 min-h-0 bg-gray-950`}>
           
           {/* Top: Canvas Editor */}
           {(isLargeScreen ? showCanvasEditor : activeMobileTab === 'editor') && (
@@ -2037,7 +2074,7 @@ const App: React.FC = () => {
                               ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30' 
                               : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
                           }`}
-                          title={syncPreviewSelection ? "Unlink Selection" : "Link Selection"}
+                          title={syncPreviewSelection ? t.unlinkSelection : t.linkSelection}
                         >
                           <ScanEye size={16} />
                         </button>
@@ -2110,7 +2147,7 @@ const App: React.FC = () => {
 
           {/* Bottom: Frame List */}
           <div 
-            className={`flex-1 overflow-hidden p-0 flex flex-col ${!isLargeScreen && activeMobileTab !== 'frames' ? 'hidden' : ''}`}
+            className={`flex-1 min-h-0 overflow-hidden p-0 flex flex-col ${!isLargeScreen && activeMobileTab !== 'frames' ? 'hidden' : ''}`}
             onContextMenu={handleBackgroundContextMenu}
             onClick={handleBackgroundClick}
           >
@@ -2185,7 +2222,7 @@ const App: React.FC = () => {
 
                      <button 
                         onClick={() => setShowCanvasEditor(!showCanvasEditor)}
-                        className={`p-1.5 rounded hover:bg-gray-800 transition-colors ${showCanvasEditor ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
+                        className={`p-1.5 rounded hover:bg-gray-800 transition-colors hidden lg:block ${showCanvasEditor ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
                         title={showCanvasEditor ? t.hideEditor : t.showEditor}
                      >
                         <Layout size={16} />
@@ -2303,22 +2340,24 @@ const App: React.FC = () => {
                     items={visibleFrames.map(f => f.id)} 
                     strategy={rectSortingStrategy}
                   >
-                    <VirtualFrameList
-                      ref={virtualListRef}
-                      frames={visibleFrames}
-                      frameSize={frameSize}
-                      compactMode={compactMode}
-                      selectedFrameIds={selectedFrameIds}
-                      onRemove={removeFrame}
-                      onUpdate={updateFrame}
-                      onReset={handleResetFrame}
-                      onSelect={handleSelection}
-                      onContextMenu={handleFrameContextMenu}
-                      labels={t.frame}
-                      activeDragId={activeDragId}
-                      isGathering={isGathering}
-                      isLayoutAnimating={isLayoutAnimating}
-                    />
+                    <div id="virtual-list-container" className="flex-1 h-full min-h-0">
+                      <VirtualFrameList
+                        ref={virtualListRef}
+                        frames={visibleFrames}
+                        frameSize={frameSize}
+                        compactMode={compactMode}
+                        selectedFrameIds={selectedFrameIds}
+                        onRemove={removeFrame}
+                        onUpdate={updateFrame}
+                        onReset={handleResetFrame}
+                        onSelect={handleSelection}
+                        onContextMenu={handleFrameContextMenu}
+                        labels={t.frame}
+                        activeDragId={activeDragId}
+                        isGathering={isGathering}
+                        isLayoutAnimating={isLayoutAnimating}
+                      />
+                    </div>
                   </SortableContext>
                   
                   {/* Custom Drag Overlay for Better Visuals & Multi-drag */}
@@ -2386,24 +2425,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* Footer */}
-          {showFooter && isLargeScreen && (
-            <footer className="h-8 bg-gray-900 border-t border-gray-800 flex items-center justify-between px-4 text-xs text-gray-500 shrink-0 z-10">
-               <div className="flex-1"></div>
-               <div className="flex items-center gap-1">
-                 <span>{t.author}: <a href="https://github.com/Arminosi/GifBuilder/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Arminosi</a></span>
-               </div>
-               <div className="flex-1 flex justify-end">
-                 <button 
-                   onClick={() => setShowFooter(false)}
-                   className="p-1 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors"
-                   title={t.close}
-                 >
-                   <XIcon size={12} />
-                 </button>
-               </div>
-            </footer>
-          )}
+          {/* Footer - Moved to Sidebar */}
         </main>
       </div>
 
