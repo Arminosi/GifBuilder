@@ -621,7 +621,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     >
       {/* Canvas Area */}
       <div 
-        className="relative shadow-2xl box-content border border-gray-700 transition-all duration-200 ease-out" 
+        className="relative shadow-2xl box-content border border-gray-700" 
         style={canvasStyle}
       >
         {/* Frame Image */}
