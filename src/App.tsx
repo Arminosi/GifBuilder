@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, Play, Download, Trash2, Undo2, Redo2, 
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
@@ -111,6 +111,7 @@ const App: React.FC = () => {
   const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
   const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<'auto' | 'vertical' | 'horizontal'>('auto');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showCanvasEditor, setShowCanvasEditor] = useState(true);
   
@@ -2185,6 +2186,24 @@ const App: React.FC = () => {
                         <Monitor size={16} />
                         <span className="hidden lg:inline text-xs font-medium">{t.compactMode}</span>
                      </button>
+
+                     {/* Layout Mode Toggle */}
+                     <button 
+                        onClick={() => {
+                          const modes: ('auto' | 'vertical' | 'horizontal')[] = ['auto', 'vertical', 'horizontal'];
+                          const nextIndex = (modes.indexOf(layoutMode) + 1) % modes.length;
+                          setLayoutMode(modes[nextIndex]);
+                        }}
+                        className={`p-1.5 lg:px-2.5 rounded hover:bg-gray-800 transition-colors flex items-center gap-2 ${layoutMode !== 'auto' ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
+                        title={layoutMode === 'auto' ? t.layoutMode.auto : (layoutMode === 'vertical' ? t.layoutMode.vertical : t.layoutMode.horizontal)}
+                     >
+                        {layoutMode === 'auto' && <Layout size={16} />}
+                        {layoutMode === 'vertical' && <Rows size={16} />}
+                        {layoutMode === 'horizontal' && <Columns size={16} />}
+                        <span className="hidden lg:inline text-xs font-medium">
+                          {layoutMode === 'auto' ? t.layoutMode.auto : (layoutMode === 'vertical' ? t.layoutMode.vertical : t.layoutMode.horizontal)}
+                        </span>
+                     </button>
                    </div>
                    
                    <div className="flex items-center gap-2 shrink-0">
@@ -2353,9 +2372,12 @@ const App: React.FC = () => {
                         onSelect={handleSelection}
                         onContextMenu={handleFrameContextMenu}
                         labels={t.frame}
+                        confirmResetText={t.confirmReset}
                         activeDragId={activeDragId}
                         isGathering={isGathering}
                         isLayoutAnimating={isLayoutAnimating}
+                        layoutMode={layoutMode}
+                        onCompactModeChange={setCompactMode}
                       />
                     </div>
                   </SortableContext>

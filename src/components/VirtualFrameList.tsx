@@ -21,9 +21,12 @@ interface VirtualFrameListProps {
   onSelect: (id: string, e: React.MouseEvent) => void;
   onContextMenu: (id: string, e: React.MouseEvent) => void;
   labels: FrameLabels;
+  confirmResetText?: string;
   activeDragId?: string | null;
   isGathering?: boolean;
   isLayoutAnimating?: boolean;
+  layoutMode?: 'auto' | 'vertical' | 'horizontal';
+  onCompactModeChange?: (isCompact: boolean) => void;
 }
 
 const GAP = 16; // gap-4 (1rem)
@@ -43,9 +46,11 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     onSelect,
     onContextMenu,
     labels,
+    confirmResetText,
     activeDragId,
     isGathering,
-    isLayoutAnimating
+    isLayoutAnimating,
+    isHorizontal
   } = data;
 
   const startIndex = index * columnCount;
@@ -82,8 +87,11 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             isSelected={selectedFrameIds.has(frame.id)}
             onSelect={onSelect}
             onContextMenu={onContextMenu}
+            confirmResetText={confirmResetText}
             isMultiDragging={activeDragId && selectedFrameIds.has(frame.id) && selectedFrameIds.size > 1}
             isGathering={isGathering}
+            frameWidth={frameWidth}
+            isHorizontal={isHorizontal}
           />
         </div>
       ))}
@@ -102,9 +110,12 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
   onSelect,
   onContextMenu,
   labels,
+  confirmResetText,
   activeDragId,
   isGathering,
-  isLayoutAnimating
+  isLayoutAnimating,
+  layoutMode = 'auto',
+  onCompactModeChange
 }, ref) => {
   const listRef = useRef<List>(null);
   const columnCountRef = useRef<number>(1);
@@ -139,12 +150,37 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
           // Calculate actual width per item to fill space
           const frameWidth = (availableWidth - (safeColumnCount - 1) * GAP) / safeColumnCount;
           
-          // Calculate item height based on actual width (since image is aspect-square)
-          // Compact: padding/border (~20px) + header (~24px) + image (frameWidth)
-          // Full: padding/border (~24px) + header (~24px) + image (frameWidth) + inputs (~140px)
-          const itemHeight = compactMode 
-            ? frameWidth + 60 
-            : frameWidth + 220; 
+          // Determine intended layout first
+          let intendedHorizontal = false;
+          if (layoutMode === 'horizontal') {
+             intendedHorizontal = true;
+          } else if (layoutMode === 'vertical') {
+             intendedHorizontal = false;
+          } else {
+             // Auto: Switch to horizontal if width is sufficient (> 300px)
+             intendedHorizontal = frameWidth > 300;
+          }
+
+          // Calculate potential vertical height first
+          // Reduced height since inputs are more compact now
+          const potentialVerticalHeight = frameWidth + 160;
+          
+          // Determine final layout
+          // Only use horizontal if not in compact mode
+          const isHorizontal = !compactMode && intendedHorizontal;
+          
+          let itemHeight;
+          if (compactMode) {
+            itemHeight = frameWidth + 60;
+          } else if (isHorizontal) {
+            // Horizontal layout
+            // Scale height with width, but maintain minimum for inputs
+            // Inputs need ~120px + padding/header
+            itemHeight = Math.max(200, frameWidth * 0.6);
+          } else {
+            // Vertical layout
+            itemHeight = potentialVerticalHeight;
+          } 
 
           const rowCount = Math.ceil(frames.length / safeColumnCount);
 
@@ -169,9 +205,11 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 onSelect,
                 onContextMenu,
                 labels,
+                confirmResetText,
                 activeDragId,
                 isGathering,
-                isLayoutAnimating
+                isLayoutAnimating,
+                isHorizontal
               }}
             >
               {Row}
