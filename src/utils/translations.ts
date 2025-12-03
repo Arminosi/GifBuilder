@@ -97,7 +97,13 @@ export interface TranslationSchema {
   frameInfo: string;
   batchMode: string;
   batchSelectMode: string;
+  layoutMode: {
+    auto: string;
+    vertical: string;
+    horizontal: string;
+  };
   author: string;
+  confirmReset: string;
   localProcessing: string;
   linkSelection: string;
   unlinkSelection: string;
@@ -247,7 +253,13 @@ export const translations: Record<Language, TranslationSchema> = {
     frameInfo: 'Frame Info',
     batchMode: "Batch Mode",
     batchSelectMode: "Batch Select",
-    author: "Author",
+    layoutMode: {
+      auto: "Auto",
+      vertical: "Vertical",
+      horizontal: "Horizontal"
+    },
+    author: "Created by Arminosi",
+    confirmReset: "Confirm?",
     localProcessing: "All operations are processed locally in your browser. No data is uploaded to any server.",
     linkSelection: "Link Selection",
     unlinkSelection: "Unlink Selection",
@@ -391,7 +403,13 @@ export const translations: Record<Language, TranslationSchema> = {
     frameInfo: "帧信息",
     batchMode: "批量模式",
     batchSelectMode: "批量选择",
+    layoutMode: {
+      auto: "自动",
+      vertical: "纵向",
+      horizontal: "横向"
+    },
     author: "作者",
+    confirmReset: "确认重置?",
     localProcessing: "所有操作均在本地浏览器完成，数据不会上传至服务器。",
     linkSelection: "关联选中",
     unlinkSelection: "取消关联",

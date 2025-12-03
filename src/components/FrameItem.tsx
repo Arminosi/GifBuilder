@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FrameData } from '../types';
@@ -13,6 +13,7 @@ interface FrameCardProps {
   onUpdate?: (id: string, updates: Partial<FrameData>) => void;
   onReset?: (id: string) => void;
   labels: FrameLabels;
+  confirmResetText?: string;
   compact?: boolean;
   isSelected?: boolean;
   onSelect?: (id: string, e: React.MouseEvent) => void;
@@ -22,6 +23,8 @@ interface FrameCardProps {
   dragListeners?: any;
   dragAttributes?: any;
   setNodeRef?: (node: HTMLElement | null) => void;
+  frameWidth?: number;
+  isHorizontal?: boolean;
 }
 
 // Helper component for buffered input
@@ -29,20 +32,32 @@ const BufferedInput = ({
   value, 
   onChange, 
   min, 
-  label 
+  label,
+  tooltip
 }: { 
   value: number; 
   onChange?: (val: number) => void; 
   min?: number;
   label: string;
+  tooltip?: string;
 }) => {
   const [localValue, setLocalValue] = useState(value.toString());
+  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLocalValue(value.toString());
   }, [value]);
 
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
   const commit = () => {
+    setIsEditing(false);
     if (!onChange) return;
     const num = parseInt(localValue);
     if (!isNaN(num) && num !== value) {
@@ -54,23 +69,47 @@ const BufferedInput = ({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      (e.target as HTMLInputElement).blur();
+      commit();
+    } else if (e.key === 'Escape') {
+      setLocalValue(value.toString());
+      setIsEditing(false);
     }
   };
 
   return (
-    <div onClick={(e) => e.stopPropagation()}>
-      <label className="block text-gray-400 text-[10px] mb-0.5">{label}</label>
-      <input
-        type="number"
-        min={min}
-        value={localValue}
-        onChange={(e) => setLocalValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        readOnly={!onChange}
-        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white focus:border-blue-500 focus:outline-none text-xs"
-      />
+    <div 
+      onClick={(e) => e.stopPropagation()} 
+      className="relative flex items-center justify-between gap-2 bg-gray-900 border border-gray-800 rounded px-2 h-6 w-full hover:border-gray-600 transition-colors group/input"
+    >
+      {isEditing && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-gray-900 text-blue-400 text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 whitespace-nowrap z-20 shadow-lg animate-in fade-in zoom-in-95 duration-100 pointer-events-none">
+          {tooltip || label}
+        </div>
+      )}
+      {!isEditing && <label className="text-gray-500 text-[10px] font-medium truncate select-none group-hover/input:text-gray-400 transition-colors max-w-[45%]" title={label}>{label}</label>}
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="number"
+          min={min}
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="min-w-0 w-full bg-transparent text-white focus:outline-none text-xs font-mono text-right p-0 border-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+      ) : (
+        <div 
+          onClick={() => onChange && setIsEditing(true)}
+          className={`text-xs font-mono truncate text-right flex-1 ${
+            onChange 
+              ? 'text-gray-300 cursor-text' 
+              : 'text-gray-500 cursor-default'
+          }`}
+        >
+          {value}
+        </div>
+      )}
     </div>
   );
 };
@@ -83,6 +122,7 @@ export const FrameCard: React.FC<FrameCardProps> = ({
   onUpdate,
   onReset,
   labels,
+  confirmResetText = "Confirm?",
   compact,
   isSelected,
   onSelect,
@@ -91,22 +131,32 @@ export const FrameCard: React.FC<FrameCardProps> = ({
   style,
   dragListeners,
   dragAttributes,
-  setNodeRef
+  setNodeRef,
+  frameWidth,
+  isHorizontal
 }) => {
+  const [resetConfirm, setResetConfirm] = useState(false);
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       data-frame-id={frame.id}
-      onClick={(e) => onSelect?.(frame.id, e)}
+      onClick={(e) => {
+        // Prevent default browser scrolling/focus behavior when clicking the card background
+        // This fixes the issue where clicking a large card causes the panel to jump
+        if (!e.defaultPrevented) {
+           onSelect?.(frame.id, e);
+        }
+      }}
       onContextMenu={(e) => onContextMenu?.(frame.id, e)}
-      className={`relative group flex flex-col rounded-lg shadow-sm border transition-all cursor-pointer select-none ${
+      className={`relative group flex flex-col rounded-lg shadow-sm border transition-all cursor-pointer select-none h-full ${
         isSelected 
           ? 'bg-gray-800 border-blue-500 ring-2 ring-blue-500/50' 
           : 'bg-gray-800 border-gray-700 hover:border-gray-600'
       } ${compact ? 'p-2' : 'p-3 gap-2'} ${isDragging ? 'opacity-50' : 'opacity-100'}`}
     >
-      <div className="flex justify-between items-start mb-1">
+      <div className="flex justify-between items-start mb-1 shrink-0">
         <div 
           {...dragAttributes} 
           {...dragListeners} 
@@ -124,14 +174,30 @@ export const FrameCard: React.FC<FrameCardProps> = ({
         )}
 
         <div className="flex gap-1 ml-auto">
-          {onReset && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onReset(frame.id); }}
-              className="text-gray-500 hover:text-blue-400 p-0.5 rounded transition-colors"
-              title="Reset to original size"
-            >
-              <RotateCcw size={14} />
-            </button>
+          {onReset && (!frameWidth || frameWidth >= 160) && (
+            <div className="relative">
+              {resetConfirm && (
+                <div className="absolute top-full right-0 mt-1 bg-gray-900 text-amber-500 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap z-20 shadow-lg animate-in fade-in zoom-in-95 duration-100">
+                  {confirmResetText}
+                </div>
+              )}
+              <button
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (resetConfirm) {
+                    onReset(frame.id);
+                    setResetConfirm(false);
+                  } else {
+                    setResetConfirm(true);
+                    setTimeout(() => setResetConfirm(false), 2000);
+                  }
+                }}
+                className={`${resetConfirm ? 'text-amber-500 hover:text-amber-600 bg-amber-500/10' : 'text-gray-500 hover:text-blue-400'} p-0.5 rounded transition-colors`}
+                title={resetConfirm ? confirmResetText : "Reset to original size"}
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
           )}
           {onRemove && (
             <button
@@ -144,62 +210,68 @@ export const FrameCard: React.FC<FrameCardProps> = ({
         </div>
       </div>
 
-      <div className={`relative bg-gray-900 rounded border border-gray-700 overflow-hidden flex items-center justify-center ${compact ? 'aspect-square mb-1' : 'aspect-square'}`}>
-        <img 
-          src={frame.previewUrl} 
-          alt={`Frame ${index}`} 
-          draggable={false}
-          className="max-w-full max-h-full object-contain pointer-events-none" 
-        />
-        <div className="absolute bottom-0 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-tr">
-          #{index + 1}
+      <div className={`flex ${isHorizontal ? 'flex-row gap-3 h-full min-h-0' : 'flex-col'}`}>
+        <div className={`relative bg-gray-900 rounded border border-gray-700 overflow-hidden flex items-center justify-center ${isHorizontal ? 'flex-1 h-full' : (compact ? 'aspect-square mb-1' : 'aspect-square')}`}>
+          <img 
+            src={frame.previewUrl} 
+            alt={`Frame ${index}`} 
+            draggable={false}
+            className="max-w-full max-h-full object-contain pointer-events-none" 
+          />
+          <div className="absolute bottom-0 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-tr">
+            #{index + 1}
+          </div>
         </div>
-      </div>
 
-      {!compact && (
-        <>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="col-span-2">
-               <BufferedInput 
-                 label={labels.time} 
-                 value={frame.duration} 
-                 min={10}
-                 onChange={(val) => onUpdate?.(frame.id, { duration: val })} 
-               />
+        {!compact && (
+          <div className={isHorizontal ? 'flex-1 flex flex-col justify-center min-w-0' : ''}>
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <div className="col-span-2">
+                 <BufferedInput 
+                   label={labels.time} 
+                   value={frame.duration} 
+                   min={10}
+                   onChange={(val) => onUpdate?.(frame.id, { duration: val })} 
+                 />
+              </div>
+              
+              <BufferedInput 
+                label="X" 
+                tooltip={labels.x}
+                value={frame.x} 
+                onChange={(val) => onUpdate?.(frame.id, { x: val })} 
+              />
+
+              <BufferedInput 
+                label="Y" 
+                tooltip={labels.y}
+                value={frame.y} 
+                onChange={(val) => onUpdate?.(frame.id, { y: val })} 
+              />
+
+              <BufferedInput 
+                label="W" 
+                tooltip={labels.w}
+                value={frame.width} 
+                min={1}
+                onChange={(val) => onUpdate?.(frame.id, { width: val })} 
+              />
+              
+              <BufferedInput 
+                label="H" 
+                tooltip={labels.h}
+                value={frame.height} 
+                min={1}
+                onChange={(val) => onUpdate?.(frame.id, { height: val })} 
+              />
             </div>
             
-            <BufferedInput 
-              label={labels.x} 
-              value={frame.x} 
-              onChange={(val) => onUpdate?.(frame.id, { x: val })} 
-            />
-
-            <BufferedInput 
-              label={labels.y} 
-              value={frame.y} 
-              onChange={(val) => onUpdate?.(frame.id, { y: val })} 
-            />
-
-            <BufferedInput 
-              label={labels.w} 
-              value={frame.width} 
-              min={1}
-              onChange={(val) => onUpdate?.(frame.id, { width: val })} 
-            />
-            
-            <BufferedInput 
-              label={labels.h} 
-              value={frame.height} 
-              min={1}
-              onChange={(val) => onUpdate?.(frame.id, { height: val })} 
-            />
+            <div className="text-[10px] text-gray-500 truncate mt-2 px-1 shrink-0" title={frame.file.name}>
+              {frame.file.name}
+            </div>
           </div>
-          
-          <div className="text-[10px] text-gray-500 truncate mt-1" title={frame.file.name}>
-            {frame.file.name}
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 };
@@ -211,12 +283,15 @@ interface FrameItemProps {
   onUpdate: (id: string, updates: Partial<FrameData>) => void;
   onReset?: (id: string) => void;
   labels: FrameLabels;
+  confirmResetText?: string;
   compact?: boolean;
   isSelected?: boolean;
   onSelect: (id: string, e: React.MouseEvent) => void;
   onContextMenu?: (id: string, e: React.MouseEvent) => void;
   isMultiDragging?: boolean;
   isGathering?: boolean;
+  frameWidth?: number;
+  isHorizontal?: boolean;
 }
 
 const FrameItemComponent: React.FC<FrameItemProps> = (props) => {
@@ -257,6 +332,9 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
       prev.isGathering !== next.isGathering ||
       prev.compact !== next.compact ||
       prev.labels !== next.labels || 
+      prev.confirmResetText !== next.confirmResetText ||
+      prev.frameWidth !== next.frameWidth ||
+      prev.isHorizontal !== next.isHorizontal ||
       prev.onRemove !== next.onRemove ||
       prev.onUpdate !== next.onUpdate ||
       prev.onReset !== next.onReset ||
