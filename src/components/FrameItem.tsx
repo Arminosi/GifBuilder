@@ -298,6 +298,8 @@ interface FrameItemProps {
   isGathering?: boolean;
   frameWidth?: number;
   isHorizontal?: boolean;
+  transparentColor?: string | null;
+  isTransparentEnabled?: boolean;
 }
 
 const FrameItemComponent: React.FC<FrameItemProps> = (props) => {
