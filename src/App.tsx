@@ -92,6 +92,12 @@ const App: React.FC = () => {
   const [tolerance, setTolerance] = useState<number>(10);
   const [isEyeDropperActive, setIsEyeDropperActive] = useState(false);
   
+  // GIF Transparent Color State
+  const [gifTransparentColor, setGifTransparentColor] = useState<string>('#00ff00');
+  const [isGifTransparentEnabled, setIsGifTransparentEnabled] = useState(false);
+  const [isGifEyeDropperActive, setIsGifEyeDropperActive] = useState(false);
+  const [isBgColorEyeDropperActive, setIsBgColorEyeDropperActive] = useState(false);
+
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
   const [isBatchSelectMode, setIsBatchSelectMode] = useState(false);
@@ -1380,7 +1386,8 @@ const App: React.FC = () => {
         (p) => setProgress(p * 100),
         !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
         (status) => setProgressText(status),
-        t.generation
+        t.generation,
+        isGifTransparentEnabled ? gifTransparentColor : null
       );
       const url = URL.createObjectURL(blob);
       setGeneratedGif(url);
@@ -1844,20 +1851,85 @@ const App: React.FC = () => {
                         </button>
                       </div>
                       
+                      {canvasConfig.transparent && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-gray-500">{t.bgRemoval.gifTransparent}</span>
+                              <div className="flex bg-gray-900 rounded border border-gray-600 p-0.5">
+                                <button 
+                                  onClick={() => setIsGifTransparentEnabled(false)}
+                                  className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                  {t.bgRemoval.auto}
+                                </button>
+                                <button 
+                                  onClick={() => setIsGifTransparentEnabled(true)}
+                                  className={`px-2 py-0.5 text-[10px] rounded transition-colors ${isGifTransparentEnabled ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                  {t.bgRemoval.manual}
+                                </button>
+                              </div>
+                           </div>
+
+                           {isGifTransparentEnabled && (
+                              <div className="flex gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
+                                  <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                                    <div 
+                                      className="w-4 h-4 rounded border border-gray-500"
+                                      style={{ backgroundColor: gifTransparentColor }}
+                                    />
+                                    <input 
+                                      type="text" 
+                                      value={gifTransparentColor}
+                                      onChange={(e) => setGifTransparentColor(e.target.value)}
+                                      className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                                    />
+                                    <input 
+                                      type="color" 
+                                      value={gifTransparentColor}
+                                      onChange={(e) => setGifTransparentColor(e.target.value)}
+                                      className="w-6 h-6 opacity-0 absolute cursor-pointer"
+                                    />
+                                  </div>
+                                  <button 
+                                    onClick={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
+                                    className={`p-1.5 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                                    title={t.bgRemoval.eyeDropper}
+                                  >
+                                    <Pipette size={14} />
+                                  </button>
+                              </div>
+                           )}
+                        </div>
+                      )}
+
                       {!canvasConfig.transparent && (
                         <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                          <input 
-                            type="color" 
-                            value={canvasConfig.backgroundColor || '#ffffff'}
-                            onChange={(e) => handleBgColorChange(e.target.value)}
-                            className="h-8 w-12 bg-transparent border-0 cursor-pointer rounded overflow-hidden"
-                          />
-                          <input 
-                            type="text" 
-                            value={canvasConfig.backgroundColor || '#ffffff'}
-                            onChange={(e) => handleBgColorChange(e.target.value)}
-                            className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 text-sm"
-                          />
+                          <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                            <div 
+                              className="w-4 h-4 rounded border border-gray-500"
+                              style={{ backgroundColor: canvasConfig.backgroundColor || '#ffffff' }}
+                            />
+                            <input 
+                              type="text" 
+                              value={canvasConfig.backgroundColor || '#ffffff'}
+                              onChange={(e) => handleBgColorChange(e.target.value)}
+                              className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                            />
+                            <input 
+                              type="color" 
+                              value={canvasConfig.backgroundColor || '#ffffff'}
+                              onChange={(e) => handleBgColorChange(e.target.value)}
+                              className="w-6 h-6 opacity-0 absolute cursor-pointer"
+                            />
+                          </div>
+                          <button 
+                            onClick={() => setIsBgColorEyeDropperActive(!isBgColorEyeDropperActive)}
+                            className={`p-1.5 rounded border transition-colors ${isBgColorEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                            title={t.bgRemoval.eyeDropper}
+                          >
+                            <Pipette size={14} />
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2112,11 +2184,21 @@ const App: React.FC = () => {
                  labels={{...t.frame, frameInfo: t.frameInfo}}
                  emptyMessage={t.selectFrameToEdit}
                  isPreview={isPlaying}
-                 isEyeDropperActive={isEyeDropperActive}
+                 isEyeDropperActive={isEyeDropperActive || isGifEyeDropperActive || isBgColorEyeDropperActive}
                  onColorPick={(color) => {
-                    setRemoveColor(color);
-                    setIsEyeDropperActive(false);
+                    if (isEyeDropperActive) {
+                      setRemoveColor(color);
+                      setIsEyeDropperActive(false);
+                    } else if (isGifEyeDropperActive) {
+                      setGifTransparentColor(color);
+                      setIsGifEyeDropperActive(false);
+                    } else if (isBgColorEyeDropperActive) {
+                      handleBgColorChange(color);
+                      setIsBgColorEyeDropperActive(false);
+                    }
                  }}
+                 gifTransparentColor={gifTransparentColor}
+                 isGifTransparentEnabled={isGifTransparentEnabled}
                />
                {/* Selection Indicator Overlay */}
                {selectedFrameIds.size > 1 && (
@@ -2133,6 +2215,8 @@ const App: React.FC = () => {
                    frames={frames} 
                    selectedFrameIds={selectedFrameIds}
                    onSelect={handleSelection}
+                   transparentColor={gifTransparentColor}
+                   isTransparentEnabled={isGifTransparentEnabled}
                  />
                )}
             </div>
@@ -2378,6 +2462,8 @@ const App: React.FC = () => {
                         isLayoutAnimating={isLayoutAnimating}
                         layoutMode={layoutMode}
                         onCompactModeChange={setCompactMode}
+                        transparentColor={gifTransparentColor}
+                        isTransparentEnabled={isGifTransparentEnabled}
                       />
                     </div>
                   </SortableContext>

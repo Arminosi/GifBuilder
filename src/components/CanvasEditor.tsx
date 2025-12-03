@@ -13,6 +13,8 @@ interface CanvasEditorProps {
   isPreview?: boolean;
   isEyeDropperActive?: boolean;
   onColorPick?: (color: string) => void;
+  gifTransparentColor?: string | null;
+  isGifTransparentEnabled?: boolean;
 }
 
 type InteractionMode = 'idle' | 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | 'resize-l' | 'resize-r' | 'resize-t' | 'resize-b';
@@ -116,7 +118,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   emptyMessage, 
   isPreview,
   isEyeDropperActive,
-  onColorPick
+  onColorPick,
+  gifTransparentColor,
+  isGifTransparentEnabled
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -126,6 +130,53 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const [isStatsExpanded, setIsStatsExpanded] = useState(false);
   const [interaction, setInteraction] = useState<InteractionState | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [processedPreviewUrl, setProcessedPreviewUrl] = useState<string | null>(null);
+
+  // Process transparency preview
+  useEffect(() => {
+    if (!frame || !isGifTransparentEnabled || !gifTransparentColor) {
+      setProcessedPreviewUrl(null);
+      return;
+    }
+
+    let isActive = true;
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = frame.previewUrl;
+    
+    img.onload = () => {
+      if (!isActive) return;
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      const rTarget = parseInt(gifTransparentColor.slice(1, 3), 16);
+      const gTarget = parseInt(gifTransparentColor.slice(3, 5), 16);
+      const bTarget = parseInt(gifTransparentColor.slice(5, 7), 16);
+
+      // Simple exact match
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] === rTarget && data[i+1] === gTarget && data[i+2] === bTarget) {
+          data[i+3] = 0; // Set alpha to 0
+        }
+      }
+      
+      ctx.putImageData(imageData, 0, 0);
+      const newUrl = canvas.toDataURL();
+      if (isActive) setProcessedPreviewUrl(newUrl);
+    };
+
+    return () => {
+      isActive = false;
+    };
+  }, [frame?.previewUrl, isGifTransparentEnabled, gifTransparentColor]);
   const longPressTimer = useRef<any>(null);
 
   // Close context menu on click
@@ -637,7 +688,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           onTouchMove={handleTouchMove}
         >
           <img 
-            src={frame.previewUrl} 
+            src={processedPreviewUrl || frame.previewUrl} 
             alt="frame" 
             className={`absolute ${isEyeDropperActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
             style={{

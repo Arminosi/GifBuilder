@@ -1,11 +1,14 @@
 import React, { useRef, useEffect } from 'react';
 import { FrameData } from '../types';
+import { TransparentImage } from './TransparentImage';
 
 interface TimelineProps {
   frames: FrameData[];
   selectedFrameIds: Set<string>;
   onSelect: (id: string, e: React.MouseEvent) => void;
   onReorder?: (newFrames: FrameData[]) => void;
+  transparentColor?: string;
+  isTransparentEnabled?: boolean;
 }
 
 const TimelineItem = ({ 
@@ -13,11 +16,15 @@ const TimelineItem = ({
   index, 
   isSelected, 
   onSelect,
+  transparentColor,
+  isTransparentEnabled
 }: { 
   frame: FrameData; 
   index: number; 
   isSelected: boolean; 
   onSelect: (id: string, e: React.MouseEvent) => void;
+  transparentColor?: string;
+  isTransparentEnabled?: boolean;
 }) => {
   return (
     <div 
@@ -28,7 +35,15 @@ const TimelineItem = ({
       `}
       title={`Frame ${index + 1}`}
     >
-      <img src={frame.previewUrl} className="w-full h-full object-contain pointer-events-none" draggable={false} alt={`Frame ${index}`} />
+      <div className="w-full h-full pointer-events-none">
+        <TransparentImage 
+          src={frame.previewUrl} 
+          alt={`Frame ${index}`}
+          className="w-full h-full object-contain"
+          transparentColor={transparentColor}
+          enabled={isTransparentEnabled}
+        />
+      </div>
       
       {frame.colorTag && (
         <div 
@@ -44,7 +59,13 @@ const TimelineItem = ({
   );
 };
 
-export const Timeline: React.FC<TimelineProps> = ({ frames, selectedFrameIds, onSelect }) => {
+export const Timeline: React.FC<TimelineProps> = ({ 
+  frames, 
+  selectedFrameIds, 
+  onSelect,
+  transparentColor,
+  isTransparentEnabled
+}) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto scroll to last selected
@@ -79,6 +100,8 @@ export const Timeline: React.FC<TimelineProps> = ({ frames, selectedFrameIds, on
             index={index}
             isSelected={selectedFrameIds.has(frame.id)}
             onSelect={onSelect}
+            transparentColor={transparentColor}
+            isTransparentEnabled={isTransparentEnabled}
           />
         ))}
       </div>
