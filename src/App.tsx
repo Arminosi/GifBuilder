@@ -97,6 +97,9 @@ const App: React.FC = () => {
   const [isGifTransparentEnabled, setIsGifTransparentEnabled] = useState(false);
   const [isGifEyeDropperActive, setIsGifEyeDropperActive] = useState(false);
   const [isBgColorEyeDropperActive, setIsBgColorEyeDropperActive] = useState(false);
+  
+  // Transparency Detection State
+  const [hasTransparency, setHasTransparency] = useState(false);
 
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
@@ -685,6 +688,7 @@ const App: React.FC = () => {
     const newFrames: FrameData[] = [];
     let firstImageWidth = 0;
     let firstImageHeight = 0;
+    let detectedTransparency = false;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -693,10 +697,15 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          const gifFrames = await parseGifFrames(file);
-          if (gifFrames.length > 0) {
-            for (let j = 0; j < gifFrames.length; j++) {
-              const gifFrame = gifFrames[j];
+          const gifParseResult = await parseGifFrames(file);
+          if (gifParseResult.frames.length > 0) {
+            // Check if GIF has transparency
+            if (gifParseResult.hasTransparency) {
+              detectedTransparency = true;
+            }
+            
+            for (let j = 0; j < gifParseResult.frames.length; j++) {
+              const gifFrame = gifParseResult.frames[j];
               if (newFrames.length === 0 && firstImageWidth === 0) {
                 firstImageWidth = gifFrame.width;
                 firstImageHeight = gifFrame.height;
@@ -738,6 +747,14 @@ const App: React.FC = () => {
         firstImageHeight = img.naturalHeight;
       }
       
+      // Check for PNG transparency
+      if (file.type === 'image/png') {
+        const hasPNGTransparency = await checkPNGTransparency(file);
+        if (hasPNGTransparency) {
+          detectedTransparency = true;
+        }
+      }
+      
       newFrames.push({
         id: Math.random().toString(36).substr(2, 9),
         file,
@@ -757,8 +774,12 @@ const App: React.FC = () => {
         const nextFrames = [...prev.frames];
         nextFrames.splice(insertTargetIndex, 0, ...newFrames);
         
-        // If it was empty, update canvas size
+        // If it was empty, update canvas size and transparency state
         const shouldSetSize = prev.frames.length === 0;
+        
+        if (shouldSetSize) {
+          setHasTransparency(detectedTransparency);
+        }
         
         return {
           ...prev,
@@ -846,6 +867,7 @@ const App: React.FC = () => {
     const newFrames: FrameData[] = [];
     let firstImageWidth = 0;
     let firstImageHeight = 0;
+    let detectedTransparency = false;
     
     // Process files
     for (let i = 0; i < files.length; i++) {
@@ -855,10 +877,15 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          const gifFrames = await parseGifFrames(file);
-          if (gifFrames.length > 0) {
-            for (let j = 0; j < gifFrames.length; j++) {
-              const gifFrame = gifFrames[j];
+          const gifParseResult = await parseGifFrames(file);
+          if (gifParseResult.frames.length > 0) {
+            // Check if GIF has transparency
+            if (gifParseResult.hasTransparency) {
+              detectedTransparency = true;
+            }
+            
+            for (let j = 0; j < gifParseResult.frames.length; j++) {
+              const gifFrame = gifParseResult.frames[j];
               if (newFrames.length === 0 && firstImageWidth === 0) {
                 firstImageWidth = gifFrame.width;
                 firstImageHeight = gifFrame.height;
@@ -900,6 +927,14 @@ const App: React.FC = () => {
         firstImageHeight = img.naturalHeight;
       }
       
+      // Check for PNG transparency
+      if (file.type === 'image/png') {
+        const hasPNGTransparency = await checkPNGTransparency(file);
+        if (hasPNGTransparency) {
+          detectedTransparency = true;
+        }
+      }
+      
       newFrames.push({
         id: Math.random().toString(36).substr(2, 9),
         file,
@@ -915,6 +950,11 @@ const App: React.FC = () => {
     }
 
     if (newFrames.length > 0) {
+      // Update hasTransparency state only for first upload
+      if (frames.length === 0) {
+        setHasTransparency(detectedTransparency);
+      }
+      
       setAppState(prev => {
         const shouldSetSize = prev.frames.length === 0;
         return {
@@ -1453,6 +1493,38 @@ const App: React.FC = () => {
       }
     }));
   };
+  
+  // Helper function to check if PNG has transparency
+  const checkPNGTransparency = async (file: File): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) {
+          resolve(false);
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // Check if any pixel has alpha < 255
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] < 255) {
+            resolve(true);
+            return;
+          }
+        }
+        resolve(false);
+      };
+      img.onerror = () => resolve(false);
+      img.src = URL.createObjectURL(file);
+    });
+  };
 
   const handleRemoveBackground = async () => {
     if (!removeColor || selectedFrameIds.size === 0) return;
@@ -1759,7 +1831,11 @@ const App: React.FC = () => {
         )}
 
         <aside 
-          className={`bg-gray-900 lg:border-r border-b lg:border-b-0 border-gray-800 flex flex-col overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar transition-all duration-300 ease-in-out z-50 ${
+          className={`lg:border-r border-b lg:border-b-0 border-gray-800 flex flex-col overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar transition-all duration-300 ease-in-out z-50 ${
+            hasTransparency 
+              ? 'bg-[linear-gradient(45deg,#2a2a2a_25%,transparent_25%,transparent_75%,#2a2a2a_75%,#2a2a2a),linear-gradient(45deg,#2a2a2a_25%,transparent_25%,transparent_75%,#2a2a2a_75%,#2a2a2a)] bg-[length:20px_20px] bg-[position:0_0,10px_10px] [background-color:#1f1f1f]'
+              : 'bg-gray-900'
+          } ${
             isLargeScreen 
               ? (isSidebarOpen ? 'opacity-100' : 'opacity-0 lg:border-r-0 border-b-0 overflow-hidden')
               : (isSidebarOpen ? 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl translate-x-0' : 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl -translate-x-full')
