@@ -7,12 +7,7 @@ export interface GifFrame {
   height: number;
 }
 
-export interface GifParseResult {
-  frames: GifFrame[];
-  hasTransparency: boolean;
-}
-
-export const parseGifFrames = async (file: File): Promise<GifParseResult> => {
+export const parseGifFrames = async (file: File): Promise<GifFrame[]> => {
   const arrayBuffer = await file.arrayBuffer();
   const intArray = new Uint8Array(arrayBuffer);
   
@@ -46,15 +41,9 @@ export const parseGifFrames = async (file: File): Promise<GifParseResult> => {
   if (!tempCtx) throw new Error("Could not get temp canvas context");
   
   let savedState: ImageData | null = null;
-  let hasTransparency = false;
   
   for (let i = 0; i < reader.numFrames(); i++) {
     const frameInfo = reader.frameInfo(i);
-    
-    // Check if this frame has a transparent color index
-    if (frameInfo.transparent_index !== null && frameInfo.transparent_index !== undefined) {
-      hasTransparency = true;
-    }
     
     // 1. Handle disposal of the PREVIOUS frame
     if (i > 0) {
@@ -100,5 +89,5 @@ export const parseGifFrames = async (file: File): Promise<GifParseResult> => {
     }
   }
   
-  return { frames, hasTransparency };
+  return frames;
 };
