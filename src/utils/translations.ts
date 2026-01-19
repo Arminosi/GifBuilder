@@ -167,6 +167,8 @@ export interface TranslationSchema {
   };
   craftWebsite: string;
   githubRepo: string;
+  lockAspectRatio: string;
+  unlockAspectRatio: string;
 }
 
 export const translations: Record<Language, TranslationSchema> = {
@@ -334,7 +336,9 @@ export const translations: Record<Language, TranslationSchema> = {
       keep: "Keep Current Settings"
     },
     craftWebsite: "Visit Craft Website",
-    githubRepo: "View on GitHub"
+    githubRepo: "View on GitHub",
+    lockAspectRatio: "Lock Aspect Ratio",
+    unlockAspectRatio: "Unlock Aspect Ratio"
   },
   zh: {
     undo: "撤销 (Ctrl+Z)",
@@ -500,6 +504,8 @@ export const translations: Record<Language, TranslationSchema> = {
       keep: "保持当前设置"
     },
     craftWebsite: "访问制图匠网站",
-    githubRepo: "查看 GitHub 仓库"
+    githubRepo: "查看 GitHub 仓库",
+    lockAspectRatio: "锁定宽高比",
+    unlockAspectRatio: "解锁宽高比"
   }
 };

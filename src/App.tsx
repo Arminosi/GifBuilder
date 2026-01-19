@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, Play, Download, Trash2, Undo2, Redo2, 
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
@@ -143,6 +143,10 @@ const App: React.FC = () => {
   const [showInsertModal, setShowInsertModal] = useState(false);
   const [insertTargetIndex, setInsertTargetIndex] = useState<number | null>(null);
   const [showFooter, setShowFooter] = useState(true);
+  
+  // Canvas Aspect Ratio Lock
+  const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState(1);
 
   // Resizable Panels State
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -922,6 +926,22 @@ const App: React.FC = () => {
         try {
           const gifFrames = await parseGifFrames(file);
           if (gifFrames.length > 0) {
+            // Check if any GIF frame has transparency
+            if (!hasTransparency) {
+              for (let j = 0; j < gifFrames.length; j++) {
+                const gifFrame = gifFrames[j];
+                // Convert blob URL to check transparency
+                const response = await fetch(gifFrame.url);
+                const blob = await response.blob();
+                const frameFile = new File([blob], 'temp.png', { type: 'image/png' });
+                const frameHasTransparency = await checkImageTransparency(frameFile);
+                if (frameHasTransparency) {
+                  hasTransparency = true;
+                  break;
+                }
+              }
+            }
+            
             for (let j = 0; j < gifFrames.length; j++) {
               const gifFrame = gifFrames[j];
               if (newFrames.length === 0 && firstImageWidth === 0) {
@@ -1499,6 +1519,66 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCanvasWidthChange = (width: number) => {
+    setAppState(prev => {
+      const newWidth = width || 100;
+      const newHeight = isAspectRatioLocked ? Math.round(newWidth / aspectRatio) : prev.canvasConfig.height;
+      
+      // Calculate scale ratios
+      const scaleX = newWidth / prev.canvasConfig.width;
+      const scaleY = newHeight / prev.canvasConfig.height;
+      
+      // Scale all frames
+      const scaledFrames = prev.frames.map(frame => ({
+        ...frame,
+        x: Math.round(frame.x * scaleX),
+        y: Math.round(frame.y * scaleY),
+        width: Math.round(frame.width * scaleX),
+        height: Math.round(frame.height * scaleY)
+      }));
+      
+      return {
+        ...prev,
+        frames: scaledFrames,
+        canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
+      };
+    });
+  };
+
+  const handleCanvasHeightChange = (height: number) => {
+    setAppState(prev => {
+      const newHeight = height || 100;
+      const newWidth = isAspectRatioLocked ? Math.round(newHeight * aspectRatio) : prev.canvasConfig.width;
+      
+      // Calculate scale ratios
+      const scaleX = newWidth / prev.canvasConfig.width;
+      const scaleY = newHeight / prev.canvasConfig.height;
+      
+      // Scale all frames
+      const scaledFrames = prev.frames.map(frame => ({
+        ...frame,
+        x: Math.round(frame.x * scaleX),
+        y: Math.round(frame.y * scaleY),
+        width: Math.round(frame.width * scaleX),
+        height: Math.round(frame.height * scaleY)
+      }));
+      
+      return {
+        ...prev,
+        frames: scaledFrames,
+        canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
+      };
+    });
+  };
+
+  const toggleAspectRatioLock = () => {
+    if (!isAspectRatioLocked) {
+      // Locking: save current aspect ratio
+      setAspectRatio(canvasConfig.width / canvasConfig.height);
+    }
+    setIsAspectRatioLocked(!isAspectRatioLocked);
+  };
+
   const handleGenerate = async () => {
     if (frames.length === 0) return;
     setIsGenerating(true);
@@ -2022,22 +2102,33 @@ const App: React.FC = () => {
               {/* Canvas Settings */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{t.canvasSettings}</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
                     <label className="text-xs text-gray-500 mb-1 block">{t.width}</label>
                     <input 
                       type="number" 
                       value={canvasConfig.width}
-                      onChange={(e) => setAppState(prev => ({ ...prev, canvasConfig: { ...prev.canvasConfig, width: parseInt(e.target.value) || 100 } }))}
+                      onChange={(e) => handleCanvasWidthChange(parseInt(e.target.value))}
                       className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                     />
                   </div>
-                  <div>
+                  <button
+                    onClick={toggleAspectRatioLock}
+                    className={`p-2.5 rounded border transition-all shrink-0 ${
+                      isAspectRatioLocked 
+                        ? 'bg-blue-600 border-blue-500 text-white' 
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-750 hover:text-gray-300'
+                    }`}
+                    title={isAspectRatioLocked ? t.unlockAspectRatio : t.lockAspectRatio}
+                  >
+                    {isAspectRatioLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                  </button>
+                  <div className="flex-1">
                     <label className="text-xs text-gray-500 mb-1 block">{t.height}</label>
                     <input 
                       type="number" 
                       value={canvasConfig.height}
-                      onChange={(e) => setAppState(prev => ({ ...prev, canvasConfig: { ...prev.canvasConfig, height: parseInt(e.target.value) || 100 } }))}
+                      onChange={(e) => handleCanvasHeightChange(parseInt(e.target.value))}
                       className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                     />
                   </div>
