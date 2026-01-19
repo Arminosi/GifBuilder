@@ -18,5 +18,5 @@ export default defineConfig({
     exclude: ['react-window'],
   },
   // Ensure relative paths for assets so it works in nested folders or IP access
-  base: '/gifbuilder/',
+  base: './',
 })
