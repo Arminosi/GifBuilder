@@ -7,7 +7,10 @@ export interface GifFrame {
   height: number;
 }
 
-export const parseGifFrames = async (file: File): Promise<GifFrame[]> => {
+export const parseGifFrames = async (
+  file: File, 
+  onProgress?: (current: number, total: number) => void
+): Promise<GifFrame[]> => {
   const arrayBuffer = await file.arrayBuffer();
   const intArray = new Uint8Array(arrayBuffer);
   
@@ -42,7 +45,14 @@ export const parseGifFrames = async (file: File): Promise<GifFrame[]> => {
   
   let savedState: ImageData | null = null;
   
-  for (let i = 0; i < reader.numFrames(); i++) {
+  const totalFrames = reader.numFrames();
+  
+  for (let i = 0; i < totalFrames; i++) {
+    // Report progress
+    if (onProgress) {
+      onProgress(i + 1, totalFrames);
+    }
+    
     const frameInfo = reader.frameInfo(i);
     
     // 1. Handle disposal of the PREVIOUS frame
