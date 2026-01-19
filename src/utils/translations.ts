@@ -158,6 +158,17 @@ export interface TranslationSchema {
     play: string;
     pause: string;
   };
+  autoDisableTransparent: string;
+  transparentConfirm: {
+    title: string;
+    message: string;
+    switch: string;
+    keep: string;
+  };
+  craftWebsite: string;
+  githubRepo: string;
+  lockAspectRatio: string;
+  unlockAspectRatio: string;
 }
 
 export const translations: Record<Language, TranslationSchema> = {
@@ -316,7 +327,18 @@ export const translations: Record<Language, TranslationSchema> = {
     preview: {
       play: "Play Preview",
       pause: "Pause Preview"
-    }
+    },
+    autoDisableTransparent: "No transparent pixels detected, automatically switched to solid background",
+    transparentConfirm: {
+      title: "Transparent Image Detected",
+      message: "The imported image(s) contain transparency. Would you like to switch to transparent background mode?",
+      switch: "Switch to Transparent",
+      keep: "Keep Current Settings"
+    },
+    craftWebsite: "Visit Craft Website",
+    githubRepo: "View on GitHub",
+    lockAspectRatio: "Lock Aspect Ratio",
+    unlockAspectRatio: "Unlock Aspect Ratio"
   },
   zh: {
     undo: "撤销 (Ctrl+Z)",
@@ -473,6 +495,17 @@ export const translations: Record<Language, TranslationSchema> = {
     preview: {
       play: "播放预览",
       pause: "暂停预览"
-    }
+    },
+    autoDisableTransparent: "未检测到透明图片，自动为您关闭透明背景",
+    transparentConfirm: {
+      title: "检测到透明图片",
+      message: "导入的图片包含透明通道，是否切换到透明背景模式？",
+      switch: "切换到透明背景",
+      keep: "保持当前设置"
+    },
+    craftWebsite: "访问制图匠网站",
+    githubRepo: "查看 GitHub 仓库",
+    lockAspectRatio: "锁定宽高比",
+    unlockAspectRatio: "解锁宽高比"
   }
 };

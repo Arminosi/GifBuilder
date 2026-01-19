@@ -20,6 +20,11 @@ export interface CanvasConfig {
   repeat: number; // 0 for loop, -1 for no loop
   transparent: string | null;
   backgroundColor: string;
+  backgroundImage?: string;
+  backgroundImageX?: number;
+  backgroundImageY?: number;
+  backgroundImageDisplayWidth?: number;
+  backgroundImageDisplayHeight?: number;
 }
 
 export interface HistorySnapshot {
