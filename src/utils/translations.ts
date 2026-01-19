@@ -38,6 +38,7 @@ export interface TranslationSchema {
   noFrames: string;
   uploadStart: string;
   generating: string;
+  importingGif: string;
   ready: string;
   close: string;
   download: string;
@@ -204,6 +205,7 @@ export const translations: Record<Language, TranslationSchema> = {
     noFrames: "No frames yet.",
     uploadStart: "Upload images to get started.",
     generating: "Generating GIF...",
+    importingGif: "Importing GIF ({current}/{total})...",
     ready: "GIF Ready!",
     close: "Close",
     download: "Download GIF",
@@ -370,6 +372,7 @@ export const translations: Record<Language, TranslationSchema> = {
     noFrames: "暂无图片帧",
     uploadStart: "上传图片开始制作",
     generating: "正在生成 GIF...",
+    importingGif: "正在导入 GIF 文件 ({current}/{total})...",
     ready: "GIF 制作完成!",
     close: "关闭",
     download: "下载 GIF",

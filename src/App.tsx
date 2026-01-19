@@ -761,7 +761,10 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          const gifFrames = await parseGifFrames(file);
+          showNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
+          const gifFrames = await parseGifFrames(file, (current, total) => {
+            showNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
           if (gifFrames.length > 0) {
             for (let j = 0; j < gifFrames.length; j++) {
               const gifFrame = gifFrames[j];
@@ -924,7 +927,10 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          const gifFrames = await parseGifFrames(file);
+          showNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
+          const gifFrames = await parseGifFrames(file, (current, total) => {
+            showNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
           if (gifFrames.length > 0) {
             // Check if any GIF frame has transparency
             if (!hasTransparency) {
