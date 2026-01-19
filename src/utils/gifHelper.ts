@@ -216,6 +216,24 @@ export const generateGIF = async (
                  ctx.fillStyle = currentConfig.backgroundColor || '#ffffff';
                  ctx.fillRect(0, 0, canvas.width, canvas.height);
               }
+              
+              // Draw background image if present
+              if (currentConfig.backgroundImage && !currentConfig.transparent) {
+                try {
+                  const bgImg = await loadImage(currentConfig.backgroundImage);
+                  const scaleX = currentConfig.width / config.width;
+                  const scaleY = currentConfig.height / config.height;
+                  
+                  const bgX = (currentConfig.backgroundImageX || 0) * scaleX;
+                  const bgY = (currentConfig.backgroundImageY || 0) * scaleY;
+                  const bgWidth = (currentConfig.backgroundImageDisplayWidth || currentConfig.width) * scaleX;
+                  const bgHeight = (currentConfig.backgroundImageDisplayHeight || currentConfig.height) * scaleY;
+                  
+                  ctx.drawImage(bgImg, bgX, bgY, bgWidth, bgHeight);
+                } catch (e) {
+                  console.warn("Failed to draw background image", e);
+                }
+              }
 
               // Prepare image to draw (handle custom transparency if needed)
               let imageToDraw: CanvasImageSource = img;
