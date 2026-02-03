@@ -29,6 +29,10 @@ export interface TranslationSchema {
   applyFit: string;
   setDuration: string;
   apply: string;
+  mergeDuplicates: string;
+  mergeSuccess: string;
+  noDuplicates: string;
+  merging: string;
   nameAsc: string;
   nameDesc: string;
   removeAll: string;
@@ -170,6 +174,15 @@ export interface TranslationSchema {
   githubRepo: string;
   lockAspectRatio: string;
   unlockAspectRatio: string;
+  reduceFrames: {
+    title: string;
+    every: string;
+    remove: string;
+    unit: string;
+    apply: string;
+    success: string;
+    invalid: string;
+  };
 }
 
 export const translations: Record<Language, TranslationSchema> = {
@@ -196,6 +209,10 @@ export const translations: Record<Language, TranslationSchema> = {
     applyFit: "Resize All Frames",
     setDuration: "Set all duration (ms)",
     apply: "Apply",
+    mergeDuplicates: "Merge Duplicate Frames",
+    mergeSuccess: "Merged {count} duplicate frames",
+    noDuplicates: "No duplicates found",
+    merging: "Calculating duplicates...",
     nameAsc: "Name Asc",
     nameDesc: "Name Desc",
     removeAll: "Remove All Frames",
@@ -340,7 +357,16 @@ export const translations: Record<Language, TranslationSchema> = {
     craftWebsite: "Visit Craft Website",
     githubRepo: "View on GitHub",
     lockAspectRatio: "Lock Aspect Ratio",
-    unlockAspectRatio: "Unlock Aspect Ratio"
+    unlockAspectRatio: "Unlock Aspect Ratio",
+    reduceFrames: {
+      title: "Reduce Frames",
+      every: "Every",
+      remove: "Remove",
+      unit: "frames",
+      apply: "Reduce",
+      success: "Removed {count} frames",
+      invalid: "Please enter valid numbers (>0)"
+    }
   },
   zh: {
     undo: "撤销 (Ctrl+Z)",
@@ -363,6 +389,10 @@ export const translations: Record<Language, TranslationSchema> = {
     applyFit: "应用缩放",
     setDuration: "统一设置时长 (ms)",
     apply: "应用",
+    mergeDuplicates: "合并重复帧",
+    mergeSuccess: "已合并 {count} 个重复帧",
+    noDuplicates: "未发现重复帧",
+    merging: "正在检测并合并重复帧...",
     nameAsc: "文件名正序",
     nameDesc: "文件名倒序",
     removeAll: "清空所有帧",
@@ -509,6 +539,15 @@ export const translations: Record<Language, TranslationSchema> = {
     craftWebsite: "访问制图匠网站",
     githubRepo: "查看 GitHub 仓库",
     lockAspectRatio: "锁定宽高比",
-    unlockAspectRatio: "解锁宽高比"
+    unlockAspectRatio: "解锁宽高比",
+    reduceFrames: {
+      title: "智能抽帧",
+      every: "每隔",
+      remove: "删除",
+      unit: "帧",
+      apply: "开始抽帧",
+      success: "已移除 {count} 帧",
+      invalid: "请输入有效的数字 (>0)"
+    }
   }
 };
