@@ -183,6 +183,13 @@ export interface TranslationSchema {
     success: string;
     invalid: string;
   };
+  sections: {
+    canvas: string;
+    export: string;
+    batch: string;
+    image: string;
+    actions: string;
+  };
 }
 
 export const translations: Record<Language, TranslationSchema> = {
@@ -366,6 +373,13 @@ export const translations: Record<Language, TranslationSchema> = {
       apply: "Reduce",
       success: "Removed {count} frames",
       invalid: "Please enter valid numbers (>0)"
+    },
+    sections: {
+      canvas: "Canvas Environment",
+      export: "Export Settings",
+      batch: "Batch Operations",
+      image: "Image Processing",
+      actions: "Danger Zone"
     }
   },
   zh: {
@@ -548,6 +562,13 @@ export const translations: Record<Language, TranslationSchema> = {
       apply: "开始抽帧",
       success: "已移除 {count} 帧",
       invalid: "请输入有效的数字 (>0)"
+    },
+    sections: {
+      canvas: "画布环境",
+      export: "导出设置",
+      batch: "批量操作",
+      image: "图像处理",
+      actions: "危险区域"
     }
   }
 };

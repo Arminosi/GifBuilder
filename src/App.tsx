@@ -2176,7 +2176,7 @@ const App: React.FC = () => {
           style={{ width: isLargeScreen ? (isSidebarOpen ? sidebarWidth : 0) : '100%' }}
         >
           <div style={{ width: isLargeScreen ? sidebarWidth : '100%' }}>
-            <div className="p-5 space-y-6">
+            <div className="p-4 space-y-8">
 
               {/* Upload Area */}
               <div
@@ -2211,73 +2211,73 @@ const App: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-1">{t.supports}</p>
               </div>
 
-              {/* Selection Properties (Conditional) - MOVED TO FRAME LIST PANEL */}
-
-              {/* Canvas Settings */}
+              {/* Section: Canvas Environment */}
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{t.canvasSettings}</h3>
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">{t.width}</label>
-                    <input
-                      type="number"
-                      value={canvasConfig.width}
-                      onChange={(e) => handleCanvasWidthChange(parseInt(e.target.value))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    onClick={toggleAspectRatioLock}
-                    className={`p-2.5 rounded border transition-all shrink-0 ${isAspectRatioLocked
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-750 hover:text-gray-300'
-                      }`}
-                    title={isAspectRatioLocked ? t.unlockAspectRatio : t.lockAspectRatio}
-                  >
-                    {isAspectRatioLocked ? <Lock size={16} /> : <Unlock size={16} />}
-                  </button>
-                  <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">{t.height}</label>
-                    <input
-                      type="number"
-                      value={canvasConfig.height}
-                      onChange={(e) => handleCanvasHeightChange(parseInt(e.target.value))}
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.canvas}</h3>
 
-                {/* Background Settings */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-gray-500">{t.backgroundColor}</label>
-                    <Palette size={12} className="text-gray-500" />
+                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
+                  {/* Dimensions */}
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-500 mb-1 block uppercase">{t.width}</label>
+                      <input
+                        type="number"
+                        value={canvasConfig.width}
+                        onChange={(e) => handleCanvasWidthChange(parseInt(e.target.value))}
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <button
+                      onClick={toggleAspectRatioLock}
+                      className={`p-2 rounded border transition-all shrink-0 mb-[1px] ${isAspectRatioLocked
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
+                        }`}
+                      title={isAspectRatioLocked ? t.unlockAspectRatio : t.lockAspectRatio}
+                    >
+                      {isAspectRatioLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                    </button>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-500 mb-1 block uppercase">{t.height}</label>
+                      <input
+                        type="number"
+                        value={canvasConfig.height}
+                        onChange={(e) => handleCanvasHeightChange(parseInt(e.target.value))}
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none transition-colors"
+                      />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex rounded border border-gray-600 overflow-hidden">
+
+                  {/* Background */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-gray-500 uppercase">{t.backgroundColor}</label>
+                      <Palette size={12} className="text-gray-600" />
+                    </div>
+
+                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 p-0.5">
                       <button
                         onClick={() => handleTransparentChange(true)}
-                        className={`flex-1 py-1 text-xs transition-colors ${canvasConfig.transparent === 'rgba(0,0,0,0)' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'}`}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${canvasConfig.transparent === 'rgba(0,0,0,0)' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
                       >
                         {t.transparent}
                       </button>
-                      <div className="w-px bg-gray-600"></div>
                       <button
                         onClick={() => handleTransparentChange(false)}
-                        className={`flex-1 py-1 text-xs transition-colors ${!canvasConfig.transparent ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'}`}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${!canvasConfig.transparent ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
                       >
                         {t.backgroundColor}
                       </button>
                     </div>
 
-                    {canvasConfig.transparent && (
-                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
+                    {canvasConfig.transparent ? (
+                      <div className="space-y-2 pt-1 px-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-gray-500">{t.bgRemoval.gifTransparent}</span>
-                          <div className="flex bg-gray-900 rounded border border-gray-600 p-0.5">
+                          <div className="flex bg-gray-800 rounded border border-gray-700 p-0.5 scale-90 origin-right">
                             <button
                               onClick={() => setIsGifTransparentEnabled(false)}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                             >
                               {t.bgRemoval.auto}
                             </button>
@@ -2292,27 +2292,28 @@ const App: React.FC = () => {
 
                         {isGifTransparentEnabled && (
                           <div className="flex gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
-                            <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                            <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
                               <div
-                                className="w-4 h-4 rounded border border-gray-500"
+                                className="w-4 h-4 rounded border border-gray-600 shadow-sm"
                                 style={{ backgroundColor: gifTransparentColor }}
                               />
                               <input
                                 type="text"
                                 value={gifTransparentColor}
                                 onChange={(e) => setGifTransparentColor(e.target.value)}
-                                className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                                className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
                               />
                               <input
                                 type="color"
                                 value={gifTransparentColor}
                                 onChange={(e) => setGifTransparentColor(e.target.value)}
                                 className="w-6 h-6 opacity-0 absolute cursor-pointer"
+                                title="Picker"
                               />
                             </div>
                             <button
                               onClick={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
-                              className={`p-1.5 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                              className={`p-2 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
                               title={t.bgRemoval.eyeDropper}
                             >
                               <Pipette size={14} />
@@ -2320,20 +2321,18 @@ const App: React.FC = () => {
                           </div>
                         )}
                       </div>
-                    )}
-
-                    {!canvasConfig.transparent && (
-                      <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                        <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                    ) : (
+                      <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
+                        <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 transition-colors hover:border-gray-600">
                           <div
-                            className="w-4 h-4 rounded border border-gray-500"
+                            className="w-4 h-4 rounded border border-gray-600 shadow-sm"
                             style={{ backgroundColor: canvasConfig.backgroundColor || '#ffffff' }}
                           />
                           <input
                             type="text"
                             value={canvasConfig.backgroundColor || '#ffffff'}
                             onChange={(e) => handleBgColorChange(e.target.value)}
-                            className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                            className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
                           />
                           <input
                             type="color"
@@ -2344,7 +2343,7 @@ const App: React.FC = () => {
                         </div>
                         <button
                           onClick={() => setIsBgColorEyeDropperActive(!isBgColorEyeDropperActive)}
-                          className={`p-1.5 rounded border transition-colors ${isBgColorEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                          className={`p-2 rounded border transition-colors ${isBgColorEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
                           title={t.bgRemoval.eyeDropper}
                         >
                           <Pipette size={14} />
@@ -2353,168 +2352,180 @@ const App: React.FC = () => {
                     )}
                   </div>
                 </div>
+              </div>
 
-                {/* Output Control */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 space-y-2">
-                  <label className="text-xs text-gray-500 block">{t.outputControl.title}</label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">{t.outputControl.targetSize}:</span>
-                    <input
-                      type="number"
-                      placeholder={t.outputControl.unlimited}
-                      value={targetSizeMB}
-                      onChange={(e) => setTargetSizeMB(e.target.value)}
-                      className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm min-w-0"
-                    />
-                    <span className="text-xs text-gray-400">MB</span>
+              {/* Section: Export Settings */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.export}</h3>
+                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400 font-medium">{t.outputControl.targetSize}:</span>
+                    <div className="flex-1 relative">
+                      <input
+                        type="number"
+                        placeholder={t.outputControl.unlimited}
+                        value={targetSizeMB}
+                        onChange={(e) => setTargetSizeMB(e.target.value)}
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm min-w-0 focus:border-blue-500 focus:outline-none pr-8"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">MB</span>
+                    </div>
                   </div>
-                  <p className="text-[10px] text-gray-500">{t.outputControl.autoAdjust}</p>
+                  <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">{t.outputControl.autoAdjust}</p>
                 </div>
               </div>
 
-              {/* Batch Operations */}
+              {/* Section: Batch Operations */}
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{t.batchActions}</h3>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.batch}</h3>
 
-                {/* Duration */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                  <label className="text-xs text-gray-500 mb-2 block">{t.setDuration}</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={globalDuration}
-                      onChange={(e) => setGlobalDuration(parseInt(e.target.value) || 100)}
-                      className="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm"
-                    />
-                    <button
-                      onClick={updateGlobalDuration}
-                      className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors"
-                    >
-                      {t.apply}
-                    </button>
+                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
+                  {/* Duration */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-gray-500 uppercase block">{t.setDuration}</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={globalDuration}
+                        onChange={(e) => setGlobalDuration(parseInt(e.target.value) || 100)}
+                        className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={updateGlobalDuration}
+                        className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors"
+                      >
+                        {t.apply}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Auto Fit */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-gray-500">{t.autoFit}</label>
-                    <Scaling size={12} className="text-gray-500" />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex rounded border border-gray-600 overflow-hidden">
+                  <div className="w-full h-px bg-gray-800" />
+
+                  {/* Auto Fit */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-gray-500 uppercase">{t.autoFit}</label>
+                      <Scaling size={12} className="text-gray-600" />
+                    </div>
+                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 overflow-hidden p-0.5">
                       <button
                         onClick={() => setFitMode('fill')}
-                        className={`flex-1 py-1 text-xs transition-colors ${fitMode === 'fill' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'}`}
+                        className={`flex-1 py-1 text-[10px] font-medium rounded-md transition-colors ${fitMode === 'fill' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-400'}`}
                       >
                         {t.fitFill}
                       </button>
-                      <div className="w-px bg-gray-600"></div>
                       <button
                         onClick={() => setFitMode('contain')}
-                        className={`flex-1 py-1 text-xs transition-colors ${fitMode === 'contain' ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:bg-gray-800'}`}
+                        className={`flex-1 py-1 text-[10px] font-medium rounded-md transition-colors ${fitMode === 'contain' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-400'}`}
                       >
                         {t.fitContain}
                       </button>
                     </div>
                     <button
                       onClick={handleAutoFit}
-                      className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
+                      className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1.5 text-gray-300"
                     >
                       <Maximize size={12} /> {t.applyFit}
                     </button>
                   </div>
-                </div>
 
-                {/* Batch Positioning */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                  <label className="text-xs text-gray-500 mb-2 block">{t.batchMove}</label>
-                  <button
-                    onClick={() => handleAlignCenter('all')}
-                    className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    <AlignCenter size={14} /> {t.alignCenter}
-                  </button>
-                </div>
+                  <div className="w-full h-px bg-gray-800" />
 
-                {/* Merge Duplicates */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                  <label className="text-xs text-gray-500 mb-2 block">{t.mergeDuplicates}</label>
-                  <button
-                    onClick={handleMergeDuplicates}
-                    className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Merge size={14} /> {t.mergeDuplicates}
-                  </button>
-                </div>
-
-                {/* Reduce Frames */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 space-y-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Scissors size={14} className="text-gray-500" />
-                    <label className="text-xs text-gray-500">{t.reduceFrames.title}</label>
+                  {/* Positioning & Merge */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleAlignCenter('all')}
+                      className="py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex flex-col items-center justify-center gap-1.5 text-gray-300"
+                      title={t.alignCenter}
+                    >
+                      <AlignCenter size={14} />
+                      <span className="text-[10px]">{t.alignCenter}</span>
+                    </button>
+                    <button
+                      onClick={handleMergeDuplicates}
+                      className="py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex flex-col items-center justify-center gap-1.5 text-gray-300"
+                      title={t.mergeDuplicates}
+                    >
+                      <Merge size={14} />
+                      <span className="text-[10px]">{t.mergeDuplicates}</span>
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span>{t.reduceFrames.every}</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={reduceKeep}
-                      onChange={(e) => setReduceKeep(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-12 bg-gray-900 border border-gray-600 rounded px-1.5 py-1 text-center"
-                    />
-                    <span>{t.reduceFrames.remove}</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={reduceRemove}
-                      onChange={(e) => setReduceRemove(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-12 bg-gray-900 border border-gray-600 rounded px-1.5 py-1 text-center"
-                    />
-                    <span>{t.reduceFrames.unit}</span>
+
+                  {/* Sorting */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => sortByFilename('asc')}
+                      className="py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs transition-colors flex items-center justify-center gap-1.5 text-gray-400 hover:text-gray-200"
+                    >
+                      <ArrowDownAZ size={14} />
+                      <span className="text-[10px] uppercase">A-Z</span>
+                    </button>
+                    <button
+                      onClick={() => sortByFilename('desc')}
+                      className="py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs transition-colors flex items-center justify-center gap-1.5 text-gray-400 hover:text-gray-200"
+                    >
+                      <ArrowUpAZ size={14} />
+                      <span className="text-[10px] uppercase">Z-A</span>
+                    </button>
                   </div>
-                  <button
-                    onClick={handleReduceFrames}
-                    className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    {t.reduceFrames.apply}
-                  </button>
-                </div>
 
-                {/* Sorting */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => sortByFilename('asc')}
-                    className="flex items-center justify-center gap-2 p-2 bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-xs transition-colors"
-                  >
-                    <ArrowDownAZ size={14} /> {t.nameAsc}
-                  </button>
-                  <button
-                    onClick={() => sortByFilename('desc')}
-                    className="flex items-center justify-center gap-2 p-2 bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-xs transition-colors"
-                  >
-                    <ArrowUpAZ size={14} /> {t.nameDesc}
-                  </button>
-                </div>
+                  <div className="w-full h-px bg-gray-800" />
 
-                {/* Background Removal */}
-                <div className="bg-gray-800 p-3 rounded-lg border border-gray-700 space-y-3">
+                  {/* Reduce Frames */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Scissors size={12} className="text-gray-500" />
+                      <label className="text-[10px] text-gray-500 uppercase">{t.reduceFrames.title}</label>
+                    </div>
+                    <div className="flex items-center justify-between gap-1 text-xs text-gray-400 bg-gray-800/50 p-1.5 rounded-lg border border-gray-700/50">
+                      <span className="text-[10px]">{t.reduceFrames.every}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={reduceKeep}
+                        onChange={(e) => setReduceKeep(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-10 bg-gray-900 border border-gray-600 rounded px-1 py-0.5 text-center text-xs"
+                      />
+                      <span className="text-[10px]">{t.reduceFrames.remove}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={reduceRemove}
+                        onChange={(e) => setReduceRemove(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-10 bg-gray-900 border border-gray-600 rounded px-1 py-0.5 text-center text-xs"
+                      />
+                    </div>
+                    <button
+                      onClick={handleReduceFrames}
+                      className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2 text-gray-300"
+                    >
+                      {t.reduceFrames.apply}
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Section: Image Processing */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.image}</h3>
+                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs text-gray-500 block">{t.bgRemoval.title}</label>
-                    <Eraser size={12} className="text-gray-500" />
+                    <label className="text-[10px] text-gray-500 uppercase">{t.bgRemoval.title}</label>
+                    <Eraser size={12} className="text-gray-600" />
                   </div>
 
                   <div className="flex gap-2 items-center">
-                    <div className="flex-1 flex items-center gap-2 bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                    <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
                       <div
-                        className="w-4 h-4 rounded border border-gray-500"
+                        className="w-4 h-4 rounded border border-gray-600 shadow-sm"
                         style={{ backgroundColor: removeColor }}
                       />
                       <input
                         type="text"
                         value={removeColor}
                         onChange={(e) => setRemoveColor(e.target.value)}
-                        className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0"
+                        className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
                       />
                       <input
                         type="color"
@@ -2525,15 +2536,15 @@ const App: React.FC = () => {
                     </div>
                     <button
                       onClick={() => setIsEyeDropperActive(!isEyeDropperActive)}
-                      className={`p-1.5 rounded border transition-colors ${isEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                      className={`p-2 rounded border transition-colors ${isEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
                       title={t.bgRemoval.eyeDropper}
                     >
                       <Pipette size={14} />
                     </button>
                   </div>
 
-                  <div>
-                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-gray-500 font-medium">
                       <span>{t.bgRemoval.tolerance}</span>
                       <span>{tolerance}%</span>
                     </div>
@@ -2550,23 +2561,30 @@ const App: React.FC = () => {
                   <button
                     onClick={handleRemoveBackground}
                     disabled={selectedFrameIds.size === 0}
-                    className="w-full py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-medium transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2 text-gray-300"
                   >
                     <Eraser size={12} /> {t.bgRemoval.applySelected}
                   </button>
                 </div>
+              </div>
 
+              {/* Section: Danger Zone */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.actions}</h3>
                 <button
                   onClick={clearAll}
-                  className={`w-full flex items-center justify-center gap-2 p-2 rounded border text-xs transition-colors ${clearFramesConfirm
-                    ? 'bg-red-600 text-white border-red-500'
-                    : 'bg-red-900/20 hover:bg-red-900/40 text-red-400 border-red-900/30'
+                  className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-semibold transition-all shadow-sm ${clearFramesConfirm
+                    ? 'bg-red-600 text-white border-red-500 shadow-red-900/30'
+                    : 'bg-gray-900/50 hover:bg-red-900/10 text-red-400 border-gray-800 hover:border-red-900/30'
                     }`}
                 >
                   {clearFramesConfirm ? <AlertCircle size={14} /> : <Trash2 size={14} />}
                   {clearFramesConfirm ? t.confirmAction : t.removeAll}
                 </button>
               </div>
+
+              <div className="pt-2"></div>
+
 
               {/* Author Info */}
               <div className="pt-4 border-t border-gray-800 space-y-2">
