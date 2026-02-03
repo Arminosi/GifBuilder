@@ -292,6 +292,7 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const insertFileInputRef = useRef<HTMLInputElement>(null);
   const virtualListRef = useRef<VirtualFrameListHandle>(null);
+  const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper function to check if image has transparency
   const checkImageTransparency = async (file: File): Promise<boolean> => {
@@ -334,16 +335,44 @@ const App: React.FC = () => {
   };
 
   // Show notification with auto-dismiss
+  // Show notification with auto-dismiss
   const showNotification = (message: string) => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+      notificationTimeoutRef.current = null;
+    }
     setNotificationMessage(message);
     setNotificationClosing(false);
-    setTimeout(() => {
+    notificationTimeoutRef.current = setTimeout(() => {
       setNotificationClosing(true);
       setTimeout(() => {
         setNotificationMessage(null);
         setNotificationClosing(false);
       }, 300);
     }, 3500);
+  };
+
+  // Show persistent notification (no auto-dismiss)
+  const showLoadingNotification = (message: string) => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+      notificationTimeoutRef.current = null;
+    }
+    setNotificationMessage(message);
+    setNotificationClosing(false);
+  };
+
+  // Explicitly hide notification
+  const hideNotification = () => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+      notificationTimeoutRef.current = null;
+    }
+    setNotificationClosing(true);
+    setTimeout(() => {
+      setNotificationMessage(null);
+      setNotificationClosing(false);
+    }, 300);
   };
 
   // DnD Sensors
@@ -766,9 +795,9 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          showNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
+          showLoadingNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
           const gifFrames = await parseGifFrames(file, (current, total) => {
-            showNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
+            showLoadingNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
           });
           if (gifFrames.length > 0) {
             for (let j = 0; j < gifFrames.length; j++) {
@@ -803,6 +832,8 @@ const App: React.FC = () => {
         }
       }
 
+      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', files.length.toString()));
+
       const url = URL.createObjectURL(file);
 
       const img = new Image();
@@ -827,6 +858,8 @@ const App: React.FC = () => {
         originalHeight: img.naturalHeight,
       });
     }
+
+    hideNotification();
 
     if (newFrames.length > 0) {
       setAppState(prev => {
@@ -932,9 +965,9 @@ const App: React.FC = () => {
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
-          showNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
+          showLoadingNotification(t.importingGif.replace('{current}', '0').replace('{total}', '?'));
           const gifFrames = await parseGifFrames(file, (current, total) => {
-            showNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
+            showLoadingNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
           });
           if (gifFrames.length > 0) {
             // Check if any GIF frame has transparency
@@ -985,6 +1018,8 @@ const App: React.FC = () => {
         }
       }
 
+      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', files.length.toString()));
+
       const url = URL.createObjectURL(file);
 
       const img = new Image();
@@ -1014,6 +1049,8 @@ const App: React.FC = () => {
         originalHeight: img.naturalHeight,
       });
     }
+
+    hideNotification();
 
     if (newFrames.length > 0) {
       setAppState(prev => {
