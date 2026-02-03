@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Upload, Play, Download, Trash2, Undo2, Redo2,
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock, Merge, Scissors
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock, Merge, Scissors, Film
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
@@ -2080,7 +2080,7 @@ const App: React.FC = () => {
       `}</style>
 
       {/* Header */}
-      <header className="h-16 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between px-3 lg:px-6 shrink-0 z-20 overflow-x-auto no-scrollbar">
+      <header className="h-14 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between px-3 lg:px-6 shrink-0 z-20 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -2090,10 +2090,10 @@ const App: React.FC = () => {
             <PanelLeft size={20} />
           </button>
 
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg hidden sm:flex">
-            GIF
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm hidden sm:flex">
+            <Film size={18} className="stroke-[2.5]" />
           </div>
-          <h1 className="text-lg lg:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 hidden sm:block">
+          <h1 className="text-lg lg:text-xl font-bold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent tracking-tight hidden sm:block">
             GifBuilder
           </h1>
         </div>
@@ -2102,40 +2102,40 @@ const App: React.FC = () => {
           {/* Language Switcher */}
           <button
             onClick={toggleLanguage}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white flex items-center gap-1.5 border border-transparent hover:border-gray-700"
+            className="h-9 px-3 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white flex items-center gap-2 border border-transparent hover:border-gray-700"
             title={language === 'en' ? "Switch to Chinese" : "Switch to English"}
           >
-            <Languages size={18} />
-            <span className="text-sm font-medium hidden sm:inline">{language === 'en' ? 'EN' : '中文'}</span>
+            <Languages size={16} />
+            <span className="text-xs font-semibold hidden sm:inline tracking-wide">{language === 'en' ? 'EN' : '中文'}</span>
           </button>
 
           <div className="h-6 w-px bg-gray-800 mx-0.5"></div>
 
           {/* History Controls */}
           <div className="relative">
-            <div className="flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700">
+            <div className="flex items-center bg-gray-800/80 rounded-lg p-1 border border-gray-700 h-9">
               <button
                 onClick={undo} disabled={!canUndo}
-                className="p-1.5 hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="w-7 h-7 flex items-center justify-center hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                 title={t.undo}
               >
-                <Undo2 size={16} />
+                <Undo2 size={14} />
               </button>
-              <div className="w-px h-4 bg-gray-700 mx-1" />
+              <div className="w-px h-3.5 bg-gray-700 mx-0.5" />
               <button
                 onClick={redo} disabled={!canRedo}
-                className="p-1.5 hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="w-7 h-7 flex items-center justify-center hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                 title={t.redo}
               >
-                <Redo2 size={16} />
+                <Redo2 size={14} />
               </button>
-              <div className="w-px h-4 bg-gray-700 mx-1" />
+              <div className="w-px h-3.5 bg-gray-700 mx-0.5" />
               <button
                 onClick={() => setShowHistoryStack(!showHistoryStack)}
-                className={`p-1.5 rounded transition-colors ${showHistoryStack ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${showHistoryStack ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}
                 title="History Stack"
               >
-                <List size={16} />
+                <List size={14} />
               </button>
             </div>
 
@@ -2144,12 +2144,12 @@ const App: React.FC = () => {
 
           <button
             onClick={() => setShowSnapshots(!showSnapshots)}
-            className={`p-2 rounded-lg border transition-colors flex items-center gap-2 ${showSnapshots ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700'}`}
+            className={`h-9 px-3 rounded-lg border transition-all flex items-center gap-2 ${showSnapshots ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300'}`}
           >
-            <History size={18} />
-            <span className="hidden md:inline">{t.records}</span>
+            <History size={16} />
+            <span className="hidden md:inline text-xs font-semibold tracking-wide">{t.records}</span>
             {snapshots.length > 0 && (
-              <span className="bg-blue-500 text-white text-[10px] px-1.5 rounded-full">{snapshots.length}</span>
+              <span className="bg-blue-500 text-white text-[10px] px-1.5 h-4 flex items-center rounded-full font-bold">{snapshots.length}</span>
             )}
           </button>
 
@@ -2158,19 +2158,19 @@ const App: React.FC = () => {
             <button
               onClick={() => handleExportZip(frames)}
               disabled={frames.length === 0 || isZipping}
-              className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 border border-gray-700 px-2 sm:px-3 py-2 rounded-lg font-medium flex items-center gap-2 transition-all"
+              className="h-9 px-3 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 border border-gray-700 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all"
               title={t.exportZip}
             >
-              {isZipping ? <Loader2 size={18} className="animate-spin" /> : <Package size={18} />}
+              {isZipping ? <Loader2 size={16} className="animate-spin" /> : <Package size={16} />}
               <span className="hidden xl:inline">{t.exportZip}</span>
             </button>
 
             <button
               onClick={handleGenerate}
               disabled={frames.length === 0 || isGenerating}
-              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 sm:px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all"
+              className="h-9 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all tracking-wide"
             >
-              {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
+              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
               <span className="hidden sm:inline">{t.generate}</span>
             </button>
           </div>
@@ -2200,7 +2200,7 @@ const App: React.FC = () => {
         {/* Mobile Overlay */}
         {!isLargeScreen && isSidebarOpen && (
           <div
-            className="fixed inset-0 top-16 bg-black/50 z-40 backdrop-blur-sm"
+            className="fixed inset-0 top-14 bg-black/50 z-40 backdrop-blur-sm"
             onClick={() => setIsSidebarOpen(false)}
           />
         )}
@@ -2208,7 +2208,7 @@ const App: React.FC = () => {
         <aside
           className={`bg-gray-900 lg:border-r border-b lg:border-b-0 border-gray-800 flex flex-col overflow-y-auto overflow-x-hidden shrink-0 custom-scrollbar transition-all duration-300 ease-in-out z-50 ${isLargeScreen
             ? (isSidebarOpen ? 'opacity-100' : 'opacity-0 lg:border-r-0 border-b-0 overflow-hidden')
-            : (isSidebarOpen ? 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl translate-x-0' : 'fixed top-16 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl -translate-x-full')
+            : (isSidebarOpen ? 'fixed top-14 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl translate-x-0' : 'fixed top-14 bottom-0 left-0 w-[85%] max-w-[320px] shadow-2xl -translate-x-full')
             }`}
           style={{ width: isLargeScreen ? (isSidebarOpen ? sidebarWidth : 0) : '100%' }}
         >
