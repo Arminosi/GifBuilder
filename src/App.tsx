@@ -293,6 +293,7 @@ const App: React.FC = () => {
   const insertFileInputRef = useRef<HTMLInputElement>(null);
   const virtualListRef = useRef<VirtualFrameListHandle>(null);
   const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragCounterRef = useRef(0);
 
   // Helper function to check if image has transparency
   const checkImageTransparency = async (file: File): Promise<boolean> => {
@@ -1164,6 +1165,59 @@ const App: React.FC = () => {
     }
   };
 
+  // Global Drag and Drop Handler (Desktop/Tauri Support)
+  useEffect(() => {
+    const handleWindowDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isFile = e.dataTransfer?.types.includes('Files');
+      if (!isFile) return;
+
+      dragCounterRef.current++;
+      if (!showInsertModal) {
+        setDragActive(true);
+      }
+    };
+
+    const handleWindowDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current--;
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0;
+        setDragActive(false);
+      }
+    };
+
+    const handleWindowDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const handleWindowDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      dragCounterRef.current = 0;
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFileUpload(e.dataTransfer.files);
+      }
+    };
+
+    window.addEventListener('dragenter', handleWindowDragEnter);
+    window.addEventListener('dragleave', handleWindowDragLeave);
+    window.addEventListener('dragover', handleWindowDragOver);
+    window.addEventListener('drop', handleWindowDrop);
+
+    return () => {
+      window.removeEventListener('dragenter', handleWindowDragEnter);
+      window.removeEventListener('dragleave', handleWindowDragLeave);
+      window.removeEventListener('dragover', handleWindowDragOver);
+      window.removeEventListener('drop', handleWindowDrop);
+    };
+  }, [showInsertModal, handleFileUpload]);
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveDragId(event.active.id.toString());
     // Close context menu if open
@@ -1969,7 +2023,7 @@ const App: React.FC = () => {
   }, [frames, activeDragId, selectedFrameIds, isGathering]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden" onDragEnter={handleDrag}>
+    <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden">
       <style>{`
         @keyframes slideInUp {
           from {
