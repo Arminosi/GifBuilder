@@ -2485,8 +2485,8 @@ const App: React.FC = () => {
                             setFpsValue(msToFps(globalDuration));
                           }}
                           className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'ms'
-                              ? 'bg-gray-700 text-white shadow-sm'
-                              : 'text-gray-500 hover:text-gray-400'
+                            ? 'bg-gray-700 text-white shadow-sm'
+                            : 'text-gray-500 hover:text-gray-400'
                             }`}
                         >
                           MS
@@ -2498,8 +2498,8 @@ const App: React.FC = () => {
                             setGlobalDuration(fpsToMs(fpsValue));
                           }}
                           className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'fps'
-                              ? 'bg-gray-700 text-white shadow-sm'
-                              : 'text-gray-500 hover:text-gray-400'
+                            ? 'bg-gray-700 text-white shadow-sm'
+                            : 'text-gray-500 hover:text-gray-400'
                             }`}
                         >
                           FPS
@@ -2527,15 +2527,30 @@ const App: React.FC = () => {
                         <div className="flex-1 relative">
                           <input
                             type="number"
-                            value={fpsValue}
+                            value={fpsValue === 0 ? '' : fpsValue}
                             onChange={(e) => {
-                              const fps = parseFloat(e.target.value) || 10;
-                              setFpsValue(fps);
-                              setGlobalDuration(fpsToMs(fps));
+                              const value = e.target.value;
+                              if (value === '') {
+                                setFpsValue(0); // Temporarily set to 0 when empty
+                              } else {
+                                const fps = parseInt(value) || 0;
+                                setFpsValue(fps);
+                                if (fps > 0) {
+                                  setGlobalDuration(fpsToMs(fps));
+                                }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              // Validate on blur - set to 10 if empty or invalid
+                              const value = e.target.value;
+                              if (value === '' || parseInt(value) <= 0) {
+                                setFpsValue(10);
+                                setGlobalDuration(fpsToMs(10));
+                              }
                             }}
                             className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm pr-10 focus:border-blue-500 focus:outline-none"
-                            min="0.1"
-                            step="0.1"
+                            min="1"
+                            step="1"
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">fps</span>
                         </div>
@@ -2551,7 +2566,9 @@ const App: React.FC = () => {
                     <p className="text-[9px] text-gray-600">
                       {durationMode === 'ms'
                         ? `≈ ${msToFps(globalDuration)} fps`
-                        : `≈ ${fpsToMs(fpsValue)} ms`
+                        : fpsValue > 0
+                          ? `≈ ${fpsToMs(fpsValue)} ms`
+                          : '请输入 FPS 值'
                       }
                     </p>
                   </div>
