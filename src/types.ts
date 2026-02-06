@@ -25,6 +25,7 @@ export interface CanvasConfig {
   backgroundImageY?: number;
   backgroundImageDisplayWidth?: number;
   backgroundImageDisplayHeight?: number;
+  alphaThreshold?: number; // 0-255, pixels with alpha below this become transparent (default: 128)
 }
 
 export interface HistorySnapshot {
