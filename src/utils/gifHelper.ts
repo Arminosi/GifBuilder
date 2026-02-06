@@ -34,10 +34,10 @@ const loadImage = (url: string): Promise<HTMLImageElement> => {
 };
 
 // Helper to find an unused color for transparency key for a single frame
-const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number): Promise<{ hex: number, str: string }> => {
+const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number, alphaThreshold: number = 128): Promise<{ hex: number, str: string, hasTransparency: boolean, imageData?: ImageData }> => {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return { hex: 0x00FF00, str: '#00FF00' }; // Fallback
+  if (!ctx) return { hex: 0x00FF00, str: '#00FF00', hasTransparency: false }; // Fallback
 
   try {
     const img = await loadImage(frameUrl);
@@ -47,19 +47,35 @@ const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number): Pr
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
 
-    const imageData = ctx.getImageData(0, 0, img.width, img.height).data;
+    const imageData = ctx.getImageData(0, 0, img.width, img.height);
+    const data = imageData.data;
 
-    // Build a set of used colors (only opaque pixels)
+    // First pass: check if there's any transparency and build color set
+    let hasTransparency = false;
     const usedColors = new Set<number>();
-    for (let i = 0; i < imageData.length; i += 4) {
-      // Only consider opaque pixels (alpha >= 128)
-      if (imageData[i + 3] >= 128) {
-        const r = imageData[i];
-        const g = imageData[i + 1];
-        const b = imageData[i + 2];
+
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i + 3];
+
+      // Check for transparency
+      if (alpha < alphaThreshold) {
+        hasTransparency = true;
+      }
+
+      // Only consider opaque pixels (using configurable threshold)
+      if (alpha >= alphaThreshold) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
         const colorKey = (r << 16) | (g << 8) | b;
         usedColors.add(colorKey);
       }
+    }
+
+    // If no transparency, no need to find unused color
+    if (!hasTransparency) {
+      console.log(`Frame ${frameIndex}: No transparency detected, skipping transparent key search`);
+      return { hex: 0x00FF00, str: '#00FF00', hasTransparency: false, imageData };
     }
 
     // Try up to 10 random colors
@@ -79,20 +95,20 @@ const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number): Pr
       if (!usedColors.has(colorKey)) {
         const hexStr = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
         console.log(`Frame ${frameIndex}: Found unused transparent key color: ${hexStr}`);
-        return { hex: colorKey, str: hexStr };
+        return { hex: colorKey, str: hexStr, hasTransparency: true, imageData };
       }
     }
 
     // If random attempts failed, try systematic search for unused color
-    // Start from a less common color range
-    for (let r = 1; r < 255; r += 17) {
-      for (let g = 1; g < 255; g += 17) {
-        for (let b = 1; b < 255; b += 17) {
+    // Improved: smaller step size for better coverage
+    for (let r = 1; r < 255; r += 11) {
+      for (let g = 1; g < 255; g += 11) {
+        for (let b = 1; b < 255; b += 11) {
           const colorKey = (r << 16) | (g << 8) | b;
           if (!usedColors.has(colorKey)) {
             const hexStr = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
             console.log(`Frame ${frameIndex}: Found unused transparent key color (systematic): ${hexStr}`);
-            return { hex: colorKey, str: hexStr };
+            return { hex: colorKey, str: hexStr, hasTransparency: true, imageData };
           }
         }
       }
@@ -103,7 +119,7 @@ const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number): Pr
 
   // Fallback to green
   console.warn(`Frame ${frameIndex}: Could not find unused color, falling back to green`);
-  return { hex: 0x00FF00, str: '#00FF00' };
+  return { hex: 0x00FF00, str: '#00FF00', hasTransparency: true };
 };
 
 export interface StatusTexts {
@@ -205,14 +221,21 @@ export const generateGIF = async (
 
           // Calculate per-frame transparency key if needed
           let frameTransparentKey: { hex: number, str: string } | null = null;
+          let hasFrameTransparency = false;
+          let cachedImageData: ImageData | undefined = undefined;
+          const alphaThreshold = currentConfig.alphaThreshold ?? 128;
 
           if (currentConfig.transparent) {
             if (globalTransparentKey) {
               // Use global custom transparent color
               frameTransparentKey = globalTransparentKey;
+              hasFrameTransparency = true; // Assume transparency when using custom color
             } else {
               // Calculate unused color for this specific frame
-              frameTransparentKey = await findUnusedColorForFrame(frame.previewUrl, i);
+              const result = await findUnusedColorForFrame(frame.previewUrl, i, alphaThreshold);
+              frameTransparentKey = { hex: result.hex, str: result.str };
+              hasFrameTransparency = result.hasTransparency;
+              cachedImageData = result.imageData;
             }
           }
 
@@ -255,22 +278,32 @@ export const generateGIF = async (
             let imageToDraw: CanvasImageSource = img;
 
             // Process transparency to preserve alpha channel information
-            if (currentConfig.transparent && frameTransparentKey) {
+            // Only process if frame actually has transparency
+            if (currentConfig.transparent && frameTransparentKey && hasFrameTransparency) {
               // Create temp canvas to process image transparency
               const tempCanvas = document.createElement('canvas');
               tempCanvas.width = img.width;
               tempCanvas.height = img.height;
               const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
               if (tempCtx) {
-                // Draw image on transparent background
-                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-                tempCtx.drawImage(img, 0, 0);
+                let imageData: ImageData;
 
-                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                // Reuse cached imageData if available (from transparency detection)
+                if (cachedImageData && cachedImageData.width === img.width && cachedImageData.height === img.height) {
+                  // Clone the cached imageData to avoid modifying the original
+                  imageData = new ImageData(
+                    new Uint8ClampedArray(cachedImageData.data),
+                    cachedImageData.width,
+                    cachedImageData.height
+                  );
+                } else {
+                  // Load image data if not cached
+                  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                  tempCtx.drawImage(img, 0, 0);
+                  imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                }
+
                 const data = imageData.data;
-
-                // Use configurable alpha threshold (default: 128)
-                const alphaThreshold = currentConfig.alphaThreshold ?? 128;
 
                 // Replace transparent/semi-transparent pixels with the transparency key color
                 // Keep opaque pixels as-is to preserve their original colors
