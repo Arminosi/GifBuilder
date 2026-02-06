@@ -569,37 +569,78 @@ export const generateGIF = async (
     blob = await createGif(config, '', 0, 1);
   }
 
-  // If target size is set, try to compress
+  // If target size is set, try to compress with intelligent adaptive algorithm
   if (targetSizeMB && targetSizeMB > 0) {
     const targetBytes = targetSizeMB * 1024 * 1024;
     let attempts = 0;
     let currentConfig = { ...config };
+    const maxAttempts = 3; // Reduced from 5 due to better accuracy
 
-    // Simple iterative compression strategy
-    while (blob.size > targetBytes && attempts < 5) {
+    // Intelligent adaptive compression strategy
+    while (blob.size > targetBytes && attempts < maxAttempts) {
       attempts++;
       const currentSizeMB = (blob.size / 1024 / 1024).toFixed(2);
       if (onStatus) onStatus(format(t.compressing, currentSizeMB, targetSizeMB, attempts));
 
-      const ratio = targetBytes / blob.size;
+      const currentSize = blob.size;
+      const ratio = targetBytes / currentSize;
+      const gap = (currentSize - targetBytes) / targetBytes; // How far over target (as percentage)
 
-      // Reduce dimensions (sqrt of ratio to maintain aspect ratio roughly)
-      // Don't go below 50% of previous size in one step to avoid over-compression
-      const scaleFactor = Math.max(0.7, Math.sqrt(ratio));
+      console.log(`Compression attempt ${attempts}: Current ${currentSizeMB}MB, Target ${targetSizeMB}MB, Gap: ${(gap * 100).toFixed(1)}%`);
 
-      currentConfig.width = Math.max(100, Math.floor(currentConfig.width * scaleFactor));
-      currentConfig.height = Math.max(100, Math.floor(currentConfig.height * scaleFactor));
+      // Adaptive step sizing based on gap to target
+      let scaleFactor: number;
+      let qualityIncrease: number;
 
-      // Also reduce quality slightly (increase number)
-      // gif.js quality: 1 (best) - 30 (worst)
-      currentConfig.quality = Math.min(30, currentConfig.quality + 5);
+      if (gap > 1.0) {
+        // Gap > 100% (e.g., 10MB target, 20MB+ current) - Aggressive compression
+        console.log('  → Aggressive compression (gap > 100%)');
+        scaleFactor = Math.max(0.5, Math.sqrt(ratio * 0.75)); // More aggressive scaling
+        qualityIncrease = Math.min(10, Math.ceil(gap * 5)); // Dynamic quality adjustment
+      } else if (gap > 0.5) {
+        // Gap 50-100% (e.g., 10MB target, 15-20MB current) - Moderate compression
+        console.log('  → Moderate compression (gap 50-100%)');
+        scaleFactor = Math.max(0.65, Math.sqrt(ratio * 0.85));
+        qualityIncrease = Math.min(7, Math.ceil(gap * 8));
+      } else if (gap > 0.2) {
+        // Gap 20-50% (e.g., 10MB target, 12-15MB current) - Gentle compression
+        console.log('  → Gentle compression (gap 20-50%)');
+        scaleFactor = Math.max(0.75, Math.sqrt(ratio * 0.92));
+        qualityIncrease = Math.min(5, Math.ceil(gap * 10));
+      } else if (gap > 0.1) {
+        // Gap 10-20% (e.g., 10MB target, 11-12MB current) - Fine tuning with resolution
+        console.log('  → Fine tuning (gap 10-20%)');
+        scaleFactor = Math.max(0.85, Math.sqrt(ratio * 0.96));
+        qualityIncrease = Math.min(3, Math.ceil(gap * 15));
+      } else {
+        // Gap < 10% (e.g., 10MB target, 10-11MB current) - Quality only
+        console.log('  → Quality adjustment only (gap < 10%)');
+        scaleFactor = 1.0; // Don't change resolution
+        qualityIncrease = Math.min(2, Math.ceil(gap * 20));
+      }
 
-      console.log(`Compression attempt ${attempts}: Size ${blob.size / 1024 / 1024}MB > Target ${targetSizeMB}MB. New size: ${currentConfig.width}x${currentConfig.height}, Quality: ${currentConfig.quality}`);
+      // Apply adjustments
+      if (scaleFactor < 1.0) {
+        currentConfig.width = Math.max(100, Math.floor(currentConfig.width * scaleFactor));
+        currentConfig.height = Math.max(100, Math.floor(currentConfig.height * scaleFactor));
+      }
+
+      currentConfig.quality = Math.min(30, currentConfig.quality + qualityIncrease);
+
+      console.log(`  → New config: ${currentConfig.width}x${currentConfig.height}, Quality: ${currentConfig.quality} (+${qualityIncrease})`);
 
       const prefix = format(t.compressionAttempt, attempts);
-      // Distribute remaining 30% across 5 potential attempts (6% each)
-      const baseProgress = 0.7 + ((attempts - 1) * 0.06);
-      blob = await createGif(currentConfig, prefix, baseProgress, 0.06);
+      // Distribute remaining 30% across 3 potential attempts (10% each)
+      const baseProgress = 0.7 + ((attempts - 1) * 0.1);
+      blob = await createGif(currentConfig, prefix, baseProgress, 0.1);
+    }
+
+    // Log final result
+    const finalSizeMB = (blob.size / 1024 / 1024).toFixed(2);
+    if (blob.size <= targetBytes) {
+      console.log(`✓ Compression successful: ${finalSizeMB}MB (target: ${targetSizeMB}MB) in ${attempts} attempt(s)`);
+    } else {
+      console.log(`⚠ Compression incomplete: ${finalSizeMB}MB (target: ${targetSizeMB}MB) after ${attempts} attempt(s)`);
     }
   }
 
