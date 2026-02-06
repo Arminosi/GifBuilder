@@ -82,6 +82,8 @@ const App: React.FC = () => {
   const [showHistoryStack, setShowHistoryStack] = useState(false);
   const [isHistoryPinned, setIsHistoryPinned] = useState(false);
   const [globalDuration, setGlobalDuration] = useState(100);
+  const [durationMode, setDurationMode] = useState<'ms' | 'fps'>('ms'); // Duration input mode
+  const [fpsValue, setFpsValue] = useState(10); // FPS value (10 fps = 100ms per frame)
   const [language, setLanguage] = useState<Language>('zh');
   const [fitMode, setFitMode] = useState<'fill' | 'contain'>('fill');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -1397,11 +1399,31 @@ const App: React.FC = () => {
     });
   };
 
+  // Convert FPS to milliseconds per frame
+  const fpsToMs = (fps: number): number => {
+    return Math.round(1000 / fps);
+  };
+
+  // Convert milliseconds to FPS
+  const msToFps = (ms: number): number => {
+    return Math.round(1000 / ms * 10) / 10; // Round to 1 decimal place
+  };
+
   const updateGlobalDuration = () => {
+    // Calculate duration based on current mode
+    const duration = durationMode === 'fps' ? fpsToMs(fpsValue) : globalDuration;
+
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.map(f => ({ ...f, duration: globalDuration }))
+      frames: prev.frames.map(f => ({ ...f, duration }))
     }));
+
+    // Sync the other mode's value
+    if (durationMode === 'fps') {
+      setGlobalDuration(duration);
+    } else {
+      setFpsValue(msToFps(duration));
+    }
   };
 
   const handleAutoFit = () => {
@@ -2452,14 +2474,72 @@ const App: React.FC = () => {
                 <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
                   {/* Duration */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] text-gray-500 uppercase block">{t.setDuration}</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-gray-500 uppercase block">{t.setDuration}</label>
+                      {/* Mode Toggle */}
+                      <div className="flex rounded-md border border-gray-700 bg-gray-800/50 overflow-hidden p-0.5">
+                        <button
+                          onClick={() => {
+                            setDurationMode('ms');
+                            // Sync FPS value when switching to ms mode
+                            setFpsValue(msToFps(globalDuration));
+                          }}
+                          className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'ms'
+                              ? 'bg-gray-700 text-white shadow-sm'
+                              : 'text-gray-500 hover:text-gray-400'
+                            }`}
+                        >
+                          MS
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDurationMode('fps');
+                            // Sync ms value when switching to fps mode
+                            setGlobalDuration(fpsToMs(fpsValue));
+                          }}
+                          className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'fps'
+                              ? 'bg-gray-700 text-white shadow-sm'
+                              : 'text-gray-500 hover:text-gray-400'
+                            }`}
+                        >
+                          FPS
+                        </button>
+                      </div>
+                    </div>
                     <div className="flex gap-2">
-                      <input
-                        type="number"
-                        value={globalDuration}
-                        onChange={(e) => setGlobalDuration(parseInt(e.target.value) || 100)}
-                        className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
-                      />
+                      {durationMode === 'ms' ? (
+                        <div className="flex-1 relative">
+                          <input
+                            type="number"
+                            value={globalDuration}
+                            onChange={(e) => {
+                              const ms = parseInt(e.target.value) || 100;
+                              setGlobalDuration(ms);
+                              setFpsValue(msToFps(ms));
+                            }}
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm pr-8 focus:border-blue-500 focus:outline-none"
+                            min="10"
+                            step="10"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">ms</span>
+                        </div>
+                      ) : (
+                        <div className="flex-1 relative">
+                          <input
+                            type="number"
+                            value={fpsValue}
+                            onChange={(e) => {
+                              const fps = parseFloat(e.target.value) || 10;
+                              setFpsValue(fps);
+                              setGlobalDuration(fpsToMs(fps));
+                            }}
+                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm pr-10 focus:border-blue-500 focus:outline-none"
+                            min="0.1"
+                            step="0.1"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">fps</span>
+                        </div>
+                      )}
                       <button
                         onClick={updateGlobalDuration}
                         className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors"
@@ -2467,6 +2547,13 @@ const App: React.FC = () => {
                         {t.apply}
                       </button>
                     </div>
+                    {/* Show conversion hint */}
+                    <p className="text-[9px] text-gray-600">
+                      {durationMode === 'ms'
+                        ? `≈ ${msToFps(globalDuration)} fps`
+                        : `≈ ${fpsToMs(fpsValue)} ms`
+                      }
+                    </p>
                   </div>
 
                   <div className="w-full h-px bg-gray-800" />

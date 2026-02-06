@@ -89,6 +89,14 @@ src/
 └── types.ts          # TypeScript 类型定义
 ```
 
+## 📚 文档
+
+完整的优化和技术文档请查看 **[docs 文件夹](./docs/)**：
+
+- 🚀 [性能优化文档](./docs/) - 透明度、压缩、颜色平滑等优化
+- 📊 [优化对比](./docs/OPTIMIZATION_COMPARISON.md) - 优化前后性能对比
+- 🎯 [快速参考](./docs/QUICK_REFERENCE.md) - 快速查找优化技巧
+
 ---
 
 <a name="en"></a>
