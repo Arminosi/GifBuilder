@@ -122,6 +122,81 @@ const findUnusedColorForFrame = async (frameUrl: string, frameIndex: number, alp
   return { hex: 0x00FF00, str: '#00FF00', hasTransparency: true };
 };
 
+// Helper to find a common unused color across all frames
+const findCommonUnusedColor = async (frames: FrameData[], alphaThreshold: number = 128): Promise<{ hex: number, str: string }> => {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return { hex: 0x00FF00, str: '#00FF00' };
+
+  try {
+    // Collect all used colors from all frames
+    const allUsedColors = new Set<number>();
+
+    for (const frame of frames) {
+      const img = await loadImage(frame.previewUrl);
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const data = imageData.data;
+
+      // Collect opaque colors from this frame
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] >= alphaThreshold) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const colorKey = (r << 16) | (g << 8) | b;
+          allUsedColors.add(colorKey);
+        }
+      }
+    }
+
+    console.log(`Collected ${allUsedColors.size} unique colors from ${frames.length} frames`);
+
+    // Try random colors first
+    const maxAttempts = 20;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const r = Math.floor(Math.random() * 256);
+      const g = Math.floor(Math.random() * 256);
+      const b = Math.floor(Math.random() * 256);
+
+      if ((r === 0 && g === 0 && b === 0) || (r === 255 && g === 255 && b === 255)) {
+        continue;
+      }
+
+      const colorKey = (r << 16) | (g << 8) | b;
+
+      if (!allUsedColors.has(colorKey)) {
+        const hexStr = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        console.log(`Found common unused transparent key color: ${hexStr}`);
+        return { hex: colorKey, str: hexStr };
+      }
+    }
+
+    // Systematic search with smaller step
+    for (let r = 1; r < 255; r += 7) {
+      for (let g = 1; g < 255; g += 7) {
+        for (let b = 1; b < 255; b += 7) {
+          const colorKey = (r << 16) | (g << 8) | b;
+          if (!allUsedColors.has(colorKey)) {
+            const hexStr = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+            console.log(`Found common unused transparent key color (systematic): ${hexStr}`);
+            return { hex: colorKey, str: hexStr };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to find common unused color', e);
+  }
+
+  console.warn('Could not find common unused color, falling back to green');
+  return { hex: 0x00FF00, str: '#00FF00' };
+};
+
 export interface StatusTexts {
   initializing: string;
   rendering: string; // Expects {0} for percentage
@@ -177,6 +252,11 @@ export const generateGIF = async (
         hex: (r << 16) | (g << 8) | b,
         str: customTransparentColor
       };
+    } else if (currentConfig.transparent) {
+      // For auto transparent mode, find a common unused color across all frames
+      // This will be used as the global transparency key
+      if (onStatus) onStatus("Finding common transparent key color...");
+      globalTransparentKey = await findCommonUnusedColor(frames, currentConfig.alphaThreshold ?? 128);
     }
 
     return new Promise((resolve, reject) => {
@@ -219,24 +299,16 @@ export const generateGIF = async (
           const frame = frames[i];
           if (onStatus) onStatus(`${statusPrefix}${format(t.processingFrameN, i + 1, frames.length)}`);
 
-          // Calculate per-frame transparency key if needed
-          let frameTransparentKey: { hex: number, str: string } | null = null;
+          // Detect if this frame has transparency
           let hasFrameTransparency = false;
           let cachedImageData: ImageData | undefined = undefined;
           const alphaThreshold = currentConfig.alphaThreshold ?? 128;
 
-          if (currentConfig.transparent) {
-            if (globalTransparentKey) {
-              // Use global custom transparent color
-              frameTransparentKey = globalTransparentKey;
-              hasFrameTransparency = true; // Assume transparency when using custom color
-            } else {
-              // Calculate unused color for this specific frame
-              const result = await findUnusedColorForFrame(frame.previewUrl, i, alphaThreshold);
-              frameTransparentKey = { hex: result.hex, str: result.str };
-              hasFrameTransparency = result.hasTransparency;
-              cachedImageData = result.imageData;
-            }
+          if (currentConfig.transparent && globalTransparentKey) {
+            // Check if this frame has transparency
+            const result = await findUnusedColorForFrame(frame.previewUrl, i, alphaThreshold);
+            hasFrameTransparency = result.hasTransparency;
+            cachedImageData = result.imageData;
           }
 
           try {
@@ -246,9 +318,9 @@ export const generateGIF = async (
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Handle background
-            if (currentConfig.transparent && frameTransparentKey) {
-              // If transparent mode, fill with this frame's key color first
-              ctx.fillStyle = frameTransparentKey.str;
+            if (currentConfig.transparent && globalTransparentKey) {
+              // If transparent mode, fill with global transparent key color first
+              ctx.fillStyle = globalTransparentKey.str;
               ctx.fillRect(0, 0, canvas.width, canvas.height);
             } else {
               // Otherwise fill with user selected background color
@@ -279,7 +351,7 @@ export const generateGIF = async (
 
             // Process transparency to preserve alpha channel information
             // Only process if frame actually has transparency
-            if (currentConfig.transparent && frameTransparentKey && hasFrameTransparency) {
+            if (currentConfig.transparent && globalTransparentKey && hasFrameTransparency) {
               // Create temp canvas to process image transparency
               const tempCanvas = document.createElement('canvas');
               tempCanvas.width = img.width;
@@ -311,10 +383,10 @@ export const generateGIF = async (
                   const alpha = data[k + 3];
 
                   if (alpha < alphaThreshold) {
-                    // Transparent or semi-transparent pixel: replace with key color and make fully transparent
-                    data[k] = (frameTransparentKey.hex >> 16) & 0xFF;     // R
-                    data[k + 1] = (frameTransparentKey.hex >> 8) & 0xFF;  // G
-                    data[k + 2] = frameTransparentKey.hex & 0xFF;         // B
+                    // Transparent or semi-transparent pixel: replace with global key color and make fully transparent
+                    data[k] = (globalTransparentKey.hex >> 16) & 0xFF;     // R
+                    data[k + 1] = (globalTransparentKey.hex >> 8) & 0xFF;  // G
+                    data[k + 2] = globalTransparentKey.hex & 0xFF;         // B
                     data[k + 3] = 0;  // Fully transparent
                   } else if (alpha < 255) {
                     // Semi-transparent pixel that's above threshold
@@ -380,10 +452,8 @@ export const generateGIF = async (
               delay: frame.duration
             };
 
-            // If using per-frame transparency (not global), specify transparent color for this frame
-            if (currentConfig.transparent && frameTransparentKey && !globalTransparentKey) {
-              addFrameOptions.transparent = frameTransparentKey.hex;
-            }
+            // Transparency is handled globally in GIF initialization
+            // No need to set per-frame transparency
 
             gif.addFrame(ctx, addFrameOptions);
           } catch (error) {
