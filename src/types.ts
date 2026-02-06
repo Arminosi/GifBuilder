@@ -26,6 +26,10 @@ export interface CanvasConfig {
   backgroundImageDisplayWidth?: number;
   backgroundImageDisplayHeight?: number;
   alphaThreshold?: number; // 0-255, pixels with alpha below this become transparent (default: 128)
+
+  // Compression optimization options
+  enableFrameDeduplication?: boolean; // Remove duplicate consecutive frames (default: true)
+  enableAdaptivePalette?: boolean; // Use optimal palette size based on colors (default: true)
 }
 
 export interface HistorySnapshot {
