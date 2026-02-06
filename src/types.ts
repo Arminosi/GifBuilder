@@ -30,6 +30,7 @@ export interface CanvasConfig {
   // Compression optimization options
   enableFrameDeduplication?: boolean; // Remove duplicate consecutive frames (default: true)
   enableAdaptivePalette?: boolean; // Use optimal palette size based on colors (default: true)
+  enableColorSmoothing?: boolean; // Smooth colors between frames to reduce flickering (default: false)
 }
 
 export interface HistorySnapshot {

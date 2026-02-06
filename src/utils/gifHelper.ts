@@ -279,6 +279,137 @@ const calculateOptimalPaletteSize = (uniqueColorCount: number): number => {
   return 256;
 };
 
+// Helper to extract dominant colors from a frame
+const extractDominantColors = (imageData: ImageData, maxColors: number = 256): Map<number, number> => {
+  const colorFrequency = new Map<number, number>();
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+
+    // Skip fully transparent pixels
+    if (a < 10) continue;
+
+    const colorKey = (r << 16) | (g << 8) | b;
+    colorFrequency.set(colorKey, (colorFrequency.get(colorKey) || 0) + 1);
+  }
+
+  // Sort by frequency and return top colors
+  const sorted = Array.from(colorFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxColors);
+
+  return new Map(sorted);
+};
+
+// Helper to calculate color distance (perceptual)
+const colorDistance = (color1: number, color2: number): number => {
+  const r1 = (color1 >> 16) & 0xFF;
+  const g1 = (color1 >> 8) & 0xFF;
+  const b1 = color1 & 0xFF;
+
+  const r2 = (color2 >> 16) & 0xFF;
+  const g2 = (color2 >> 8) & 0xFF;
+  const b2 = color2 & 0xFF;
+
+  // Weighted Euclidean distance (perceptual)
+  const rMean = (r1 + r2) / 2;
+  const rDiff = r1 - r2;
+  const gDiff = g1 - g2;
+  const bDiff = b1 - b2;
+
+  return Math.sqrt(
+    (2 + rMean / 256) * rDiff * rDiff +
+    4 * gDiff * gDiff +
+    (2 + (255 - rMean) / 256) * bDiff * bDiff
+  );
+};
+
+// Helper to find closest color in palette
+const findClosestColor = (targetColor: number, palette: Map<number, number>): number => {
+  let closestColor = targetColor;
+  let minDistance = Infinity;
+
+  for (const [color] of palette) {
+    const distance = colorDistance(targetColor, color);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestColor = color;
+    }
+  }
+
+  return closestColor;
+};
+
+// Helper to create color mapping between two frames
+const createColorMapping = (
+  prevColors: Map<number, number>,
+  currentColors: Map<number, number>,
+  threshold: number = 30
+): Map<number, number> => {
+  const mapping = new Map<number, number>();
+
+  for (const [currentColor] of currentColors) {
+    // Find similar color in previous frame
+    let bestMatch = currentColor;
+    let minDistance = Infinity;
+
+    for (const [prevColor] of prevColors) {
+      const distance = colorDistance(currentColor, prevColor);
+      if (distance < minDistance) {
+        minDistance = distance;
+        bestMatch = prevColor;
+      }
+    }
+
+    // Only map if colors are similar enough
+    if (minDistance < threshold) {
+      mapping.set(currentColor, bestMatch);
+    }
+  }
+
+  return mapping;
+};
+
+// Helper to apply color smoothing to image data
+const applyColorSmoothing = (
+  imageData: ImageData,
+  colorMapping: Map<number, number>
+): ImageData => {
+  const data = imageData.data;
+  const smoothed = new ImageData(
+    new Uint8ClampedArray(data),
+    imageData.width,
+    imageData.height
+  );
+  const smoothedData = smoothed.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+
+    // Skip fully transparent pixels
+    if (a < 10) continue;
+
+    const colorKey = (r << 16) | (g << 8) | b;
+
+    // Apply mapping if exists
+    if (colorMapping.has(colorKey)) {
+      const mappedColor = colorMapping.get(colorKey)!;
+      smoothedData[i] = (mappedColor >> 16) & 0xFF;
+      smoothedData[i + 1] = (mappedColor >> 8) & 0xFF;
+      smoothedData[i + 2] = mappedColor & 0xFF;
+    }
+  }
+
+  return smoothed;
+};
+
 export interface StatusTexts {
   initializing: string;
   rendering: string; // Expects {0} for percentage
@@ -384,6 +515,9 @@ export const generateGIF = async (
           reject(new Error("Could not create canvas context"));
           return;
         }
+
+        // Color smoothing state
+        let prevFrameColors: Map<number, number> | null = null;
 
         for (let i = 0; i < framesToProcess.length; i++) {
           const frame = framesToProcess[i];
@@ -534,6 +668,43 @@ export const generateGIF = async (
               ctx.restore();
             } else {
               ctx.drawImage(imageToDraw, frame.x * scaleX, frame.y * scaleY, frame.width * scaleX, frame.height * scaleY);
+            }
+
+            // Apply color smoothing if enabled
+            if (currentConfig.enableColorSmoothing && i > 0) {
+              try {
+                // Get current frame's image data
+                const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                // Extract dominant colors from current frame
+                const currentColors = extractDominantColors(currentImageData, 256);
+
+                if (prevFrameColors && prevFrameColors.size > 0) {
+                  // Create color mapping between previous and current frame
+                  const colorMapping = createColorMapping(prevFrameColors, currentColors, 30);
+
+                  if (colorMapping.size > 0) {
+                    // Apply color smoothing
+                    const smoothedImageData = applyColorSmoothing(currentImageData, colorMapping);
+                    ctx.putImageData(smoothedImageData, 0, 0);
+
+                    console.log(`  Color smoothing: Mapped ${colorMapping.size} colors for frame ${i + 1}`);
+                  }
+                }
+
+                // Store current frame colors for next iteration
+                prevFrameColors = currentColors;
+              } catch (error) {
+                console.warn(`  Color smoothing failed for frame ${i + 1}:`, error);
+              }
+            } else if (currentConfig.enableColorSmoothing && i === 0) {
+              // First frame: just extract colors for next frame
+              try {
+                const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                prevFrameColors = extractDominantColors(currentImageData, 256);
+              } catch (error) {
+                console.warn(`  Color extraction failed for frame ${i + 1}:`, error);
+              }
             }
 
             // Add frame with per-frame transparency if applicable

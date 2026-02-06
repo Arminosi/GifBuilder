@@ -98,6 +98,9 @@ const App: React.FC = () => {
   const [isGifEyeDropperActive, setIsGifEyeDropperActive] = useState(false);
   const [isBgColorEyeDropperActive, setIsBgColorEyeDropperActive] = useState(false);
 
+  // Color Smoothing State
+  const [enableColorSmoothing, setEnableColorSmoothing] = useState(false);
+
   // Notification State
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [notificationClosing, setNotificationClosing] = useState(false);
@@ -1638,7 +1641,10 @@ const App: React.FC = () => {
       const targetMB = parseFloat(targetSizeMB);
       const blob = await generateGIF(
         frames,
-        canvasConfig,
+        {
+          ...canvasConfig,
+          enableColorSmoothing
+        },
         (p) => setProgress(p * 100),
         !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
         (status) => setProgressText(status),
@@ -2409,6 +2415,33 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">{t.outputControl.autoAdjust}</p>
+
+                  {/* Color Smoothing Toggle */}
+                  <div className="mt-4 pt-4 border-t border-gray-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
+                          {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
+                        </label>
+                        <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                          {language === 'zh'
+                            ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
+                            : 'Automatically smooth similar colors between frames to reduce color flickering'}
+                        </p>
+                      </div>
+                      <button
+                        id="color-smoothing-toggle"
+                        onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
+                          }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
