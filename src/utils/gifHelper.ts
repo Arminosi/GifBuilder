@@ -197,6 +197,88 @@ const findCommonUnusedColor = async (frames: FrameData[], alphaThreshold: number
   return { hex: 0x00FF00, str: '#00FF00' };
 };
 
+// Helper to calculate a simple hash for frame comparison
+const getFrameHash = (imageData: ImageData): string => {
+  const data = imageData.data;
+  const step = Math.max(1, Math.floor(data.length / 1000)); // Sample ~1000 pixels
+  let hash = 0;
+
+  for (let i = 0; i < data.length; i += step * 4) {
+    hash = ((hash << 5) - hash) + data[i];
+    hash = ((hash << 5) - hash) + data[i + 1];
+    hash = ((hash << 5) - hash) + data[i + 2];
+    hash = ((hash << 5) - hash) + data[i + 3];
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  return hash.toString(36);
+};
+
+// Helper to check if two frames are identical
+const areFramesIdentical = (data1: Uint8ClampedArray, data2: Uint8ClampedArray): boolean => {
+  if (data1.length !== data2.length) return false;
+
+  // Sample comparison for performance (check every 4th pixel)
+  const step = 16; // Check every 4th pixel (4 channels × 4)
+  for (let i = 0; i < data1.length; i += step) {
+    if (data1[i] !== data2[i] ||
+      data1[i + 1] !== data2[i + 1] ||
+      data1[i + 2] !== data2[i + 2] ||
+      data1[i + 3] !== data2[i + 3]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+// Helper to deduplicate consecutive identical frames
+const deduplicateFrames = (frames: FrameData[]): FrameData[] => {
+  if (frames.length <= 1) return frames;
+
+  const deduplicated: FrameData[] = [];
+  let currentFrame = { ...frames[0] };
+
+  for (let i = 1; i < frames.length; i++) {
+    // Check if frames are identical (same preview URL and dimensions)
+    if (frames[i].previewUrl === currentFrame.previewUrl &&
+      frames[i].width === currentFrame.width &&
+      frames[i].height === currentFrame.height &&
+      frames[i].x === currentFrame.x &&
+      frames[i].y === currentFrame.y &&
+      frames[i].rotation === currentFrame.rotation) {
+      // Identical frame, merge by extending duration
+      currentFrame.duration += frames[i].duration;
+    } else {
+      // Different frame, save current and start new
+      deduplicated.push(currentFrame);
+      currentFrame = { ...frames[i] };
+    }
+  }
+
+  // Don't forget the last frame
+  deduplicated.push(currentFrame);
+
+  const removed = frames.length - deduplicated.length;
+  if (removed > 0) {
+    console.log(`Frame deduplication: Removed ${removed} duplicate frames (${frames.length} → ${deduplicated.length})`);
+  }
+
+  return deduplicated;
+};
+
+// Helper to calculate optimal palette size based on unique colors
+const calculateOptimalPaletteSize = (uniqueColorCount: number): number => {
+  if (uniqueColorCount <= 2) return 2;
+  if (uniqueColorCount <= 4) return 4;
+  if (uniqueColorCount <= 8) return 8;
+  if (uniqueColorCount <= 16) return 16;
+  if (uniqueColorCount <= 32) return 32;
+  if (uniqueColorCount <= 64) return 64;
+  if (uniqueColorCount <= 128) return 128;
+  return 256;
+};
+
 export interface StatusTexts {
   initializing: string;
   rendering: string; // Expects {0} for percentage
@@ -227,6 +309,14 @@ export const generateGIF = async (
     completed: "Generation complete!"
   };
 
+  // Apply frame deduplication to reduce file size (enabled by default)
+  const enableDeduplication = config.enableFrameDeduplication !== false;
+  if (onStatus && enableDeduplication) onStatus("Optimizing frames...");
+  const optimizedFrames = enableDeduplication ? deduplicateFrames(frames) : frames;
+
+  // Use optimized frames for generation
+  const framesToProcess = optimizedFrames;
+
   // Helper for simple string formatting
   const format = (str: string, ...args: (string | number)[]) => {
     return str.replace(/{(\d+)}/g, (match, number) => {
@@ -256,7 +346,7 @@ export const generateGIF = async (
       // For auto transparent mode, find a common unused color across all frames
       // This will be used as the global transparency key
       if (onStatus) onStatus("Finding common transparent key color...");
-      globalTransparentKey = await findCommonUnusedColor(frames, currentConfig.alphaThreshold ?? 128);
+      globalTransparentKey = await findCommonUnusedColor(framesToProcess, currentConfig.alphaThreshold ?? 128);
     }
 
     return new Promise((resolve, reject) => {
@@ -295,9 +385,9 @@ export const generateGIF = async (
           return;
         }
 
-        for (let i = 0; i < frames.length; i++) {
-          const frame = frames[i];
-          if (onStatus) onStatus(`${statusPrefix}${format(t.processingFrameN, i + 1, frames.length)}`);
+        for (let i = 0; i < framesToProcess.length; i++) {
+          const frame = framesToProcess[i];
+          if (onStatus) onStatus(`${statusPrefix}${format(t.processingFrameN, i + 1, framesToProcess.length)}`);
 
           // Detect if this frame has transparency
           let hasFrameTransparency = false;
