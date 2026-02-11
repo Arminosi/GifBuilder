@@ -46,6 +46,7 @@ export interface TranslationSchema {
   importingImages: string;
   extractingZip: string;
   zipNoImages: string;
+  zipMetadataDetected: string;
   ready: string;
   close: string;
   download: string;
@@ -236,6 +237,7 @@ export const translations: Record<Language, TranslationSchema> = {
     importingImages: "Importing Images ({current}/{total})...",
     extractingZip: "Extracting ZIP ({current}/{total})...",
     zipNoImages: "No image files found in the ZIP archive.",
+    zipMetadataDetected: "Detected metadata.json - frame durations applied ({count} frames)",
     ready: "GIF Ready!",
     close: "Close",
     download: "Download GIF",
@@ -426,6 +428,7 @@ export const translations: Record<Language, TranslationSchema> = {
     importingImages: "导入图片 ({current}/{total})...",
     extractingZip: "正在解压 ZIP ({current}/{total})...",
     zipNoImages: "ZIP 压缩包中未找到图片文件。",
+    zipMetadataDetected: "检测到 metadata.json - 已应用帧持续时间 ({count} 帧)",
     ready: "GIF 制作完成!",
     close: "关闭",
     download: "下载 GIF",

@@ -1,0 +1,57 @@
+{
+    "generatedBy": "RM-Anim-Reconstructor",
+    "defaultFrameDuration": 16,
+    "totalFrames": 10,
+    "frames": [
+        {
+            "file": "Seq_0000.png",
+            "duration": 16,
+            "frameIndex": 0
+        },
+        {
+            "file": "Seq_0001.png",
+            "duration": 16,
+            "frameIndex": 1
+        },
+        {
+            "file": "Seq_0002.png",
+            "duration": 16,
+            "frameIndex": 2
+        },
+        {
+            "file": "Seq_0003.png",
+            "duration": 32,
+            "frameIndex": 3
+        },
+        {
+            "file": "Seq_0004.png",
+            "duration": 16,
+            "frameIndex": 4
+        },
+        {
+            "file": "Seq_0005.png",
+            "duration": 16,
+            "frameIndex": 5
+        },
+        {
+            "file": "Seq_0006.png",
+            "duration": 16,
+            "frameIndex": 6
+        },
+        {
+            "file": "Seq_0007.png",
+            "duration": 48,
+            "frameIndex": 7
+        },
+        {
+            "file": "Seq_0008.png",
+            "duration": 16,
+            "frameIndex": 8
+        },
+        {
+            "file": "Seq_0009.png",
+            "duration": 16,
+            "frameIndex": 9
+        }
+    ]
+}
