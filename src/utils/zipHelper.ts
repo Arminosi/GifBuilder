@@ -6,6 +6,31 @@ import { FrameData } from '../types';
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 
 /**
+ * Metadata structure for frame sequences exported from animation tools
+ */
+interface FrameMetadata {
+  file: string;
+  duration: number;
+  frameIndex: number;
+}
+
+interface SequenceMetadata {
+  generatedBy?: string;
+  defaultFrameDuration?: number;
+  totalFrames?: number;
+  frames: FrameMetadata[];
+}
+
+/**
+ * Result of ZIP extraction including files and optional duration metadata
+ */
+export interface ZipExtractionResult {
+  files: File[];
+  durationMap?: Map<string, number>; // filename -> duration in ms
+  defaultDuration?: number;
+}
+
+/**
  * Natural sort comparator for filenames.
  * Handles numeric sequences so that "frame_2.png" comes before "frame_10.png".
  */
@@ -38,20 +63,70 @@ const naturalCompare = (a: string, b: string): number => {
 };
 
 /**
+ * Parse metadata.json from ZIP archive if present
+ */
+const parseMetadata = async (zip: JSZip): Promise<SequenceMetadata | null> => {
+  // Look for metadata.json in root or any subdirectory
+  let metadataEntry: JSZip.JSZipObject | undefined;
+
+  zip.forEach((relativePath, zipEntry) => {
+    if (zipEntry.dir) return;
+    const fileName = relativePath.split('/').pop() || '';
+    if (fileName.toLowerCase() === 'metadata.json') {
+      metadataEntry = zipEntry;
+    }
+  });
+
+  if (!metadataEntry) return null;
+
+  try {
+    const content = await metadataEntry.async('text');
+    const metadata = JSON.parse(content) as SequenceMetadata;
+
+    // Validate metadata structure
+    if (!metadata.frames || !Array.isArray(metadata.frames)) {
+      console.warn('Invalid metadata.json: missing or invalid frames array');
+      return null;
+    }
+
+    return metadata;
+  } catch (e) {
+    console.error('Failed to parse metadata.json:', e);
+    return null;
+  }
+};
+
+/**
  * Extract image files from a ZIP archive.
  * Scans all files inside the ZIP (including nested directories),
  * filters for supported image formats, sorts them by natural filename order,
- * and returns them as File objects.
+ * and returns them as File objects with optional duration metadata.
  *
  * @param zipFile The ZIP file (File / Blob) to extract from
  * @param onProgress Optional callback for progress updates (current, total)
- * @returns Array of File objects for each image found
+ * @returns Extraction result with files and optional duration mapping
  */
 export const extractFramesFromZip = async (
   zipFile: File,
   onProgress?: (current: number, total: number) => void
-): Promise<File[]> => {
+): Promise<ZipExtractionResult> => {
   const zip = await JSZip.loadAsync(zipFile);
+
+  // Try to parse metadata.json
+  const metadata = await parseMetadata(zip);
+  const durationMap = new Map<string, number>();
+  let defaultDuration: number | undefined;
+
+  if (metadata) {
+    defaultDuration = metadata.defaultFrameDuration;
+
+    // Build duration map from metadata
+    metadata.frames.forEach(frame => {
+      // Normalize filename (remove path, use only basename)
+      const basename = frame.file.split('/').pop() || frame.file;
+      durationMap.set(basename, frame.duration);
+    });
+  }
 
   // Collect all image file entries (skip directories and macOS resource forks)
   const imageEntries: { path: string; entry: JSZip.JSZipObject }[] = [];
@@ -98,22 +173,26 @@ export const extractFramesFromZip = async (
     }
   }
 
-  return files;
+  return {
+    files,
+    durationMap: durationMap.size > 0 ? durationMap : undefined,
+    defaultDuration
+  };
 };
 
 export const generateFrameZip = async (frames: FrameData[]): Promise<Blob> => {
   const zip = new JSZip();
-  
+
   // Iterate through frames and add them to the zip
   // The frames are already sorted in the array passed to this function
   frames.forEach((frame, index) => {
     // Determine extension from original file name, default to png
     const originalName = frame.file.name;
     const extension = originalName.substring(originalName.lastIndexOf('.')) || '.png';
-    
+
     // Create sequential name: frame_001.png, frame_002.png, etc.
     const sequentialName = `frame_${String(index + 1).padStart(3, '0')}${extension}`;
-    
+
     zip.file(sequentialName, frame.file);
   });
 

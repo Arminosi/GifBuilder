@@ -795,6 +795,9 @@ const App: React.FC = () => {
 
     // Expand file list: extract images from ZIP files first
     const allFiles: File[] = [];
+    const fileDurationMap = new Map<string, number>(); // Track durations from metadata
+    let metadataDefaultDuration: number | undefined;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isZip = file.type === 'application/zip' ||
@@ -804,13 +807,26 @@ const App: React.FC = () => {
       if (isZip) {
         try {
           showLoadingNotification(t.extractingZip.replace('{current}', '0').replace('{total}', '?'));
-          const extractedFiles = await extractFramesFromZip(file, (current, total) => {
+          const extractionResult = await extractFramesFromZip(file, (current, total) => {
             showLoadingNotification(t.extractingZip.replace('{current}', current.toString()).replace('{total}', total.toString()));
           });
-          if (extractedFiles.length === 0) {
+
+          if (extractionResult.files.length === 0) {
             showNotification(t.zipNoImages);
           } else {
-            allFiles.push(...extractedFiles);
+            allFiles.push(...extractionResult.files);
+
+            // Store duration metadata if present
+            if (extractionResult.durationMap) {
+              extractionResult.durationMap.forEach((duration, filename) => {
+                fileDurationMap.set(filename, duration);
+              });
+              // Notify user that metadata was detected
+              showNotification(t.zipMetadataDetected.replace('{count}', extractionResult.durationMap.size.toString()));
+            }
+            if (extractionResult.defaultDuration !== undefined) {
+              metadataDefaultDuration = extractionResult.defaultDuration;
+            }
           }
         } catch (e) {
           console.error("Failed to extract ZIP file", e);
@@ -878,11 +894,14 @@ const App: React.FC = () => {
         firstImageHeight = img.naturalHeight;
       }
 
+      // Determine duration: metadata > metadata default > global
+      const frameDuration = fileDurationMap.get(file.name) ?? metadataDefaultDuration ?? globalDuration;
+
       newFrames.push({
         id: Math.random().toString(36).substr(2, 9),
         file,
         previewUrl: url,
-        duration: globalDuration,
+        duration: frameDuration,
         x: 0,
         y: 0,
         width: img.naturalWidth,
@@ -992,6 +1011,9 @@ const App: React.FC = () => {
 
     // Expand file list: extract images from ZIP files first
     const allFiles: File[] = [];
+    const fileDurationMap = new Map<string, number>(); // Track durations from metadata
+    let metadataDefaultDuration: number | undefined;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isZip = file.type === 'application/zip' ||
@@ -1001,13 +1023,26 @@ const App: React.FC = () => {
       if (isZip) {
         try {
           showLoadingNotification(t.extractingZip.replace('{current}', '0').replace('{total}', '?'));
-          const extractedFiles = await extractFramesFromZip(file, (current, total) => {
+          const extractionResult = await extractFramesFromZip(file, (current, total) => {
             showLoadingNotification(t.extractingZip.replace('{current}', current.toString()).replace('{total}', total.toString()));
           });
-          if (extractedFiles.length === 0) {
+
+          if (extractionResult.files.length === 0) {
             showNotification(t.zipNoImages);
           } else {
-            allFiles.push(...extractedFiles);
+            allFiles.push(...extractionResult.files);
+
+            // Store duration metadata if present
+            if (extractionResult.durationMap) {
+              extractionResult.durationMap.forEach((duration, filename) => {
+                fileDurationMap.set(filename, duration);
+              });
+              // Notify user that metadata was detected
+              showNotification(t.zipMetadataDetected.replace('{count}', extractionResult.durationMap.size.toString()));
+            }
+            if (extractionResult.defaultDuration !== undefined) {
+              metadataDefaultDuration = extractionResult.defaultDuration;
+            }
           }
         } catch (e) {
           console.error("Failed to extract ZIP file", e);
@@ -1097,11 +1132,14 @@ const App: React.FC = () => {
         firstImageHeight = img.naturalHeight;
       }
 
+      // Determine duration: metadata > metadata default > global
+      const frameDuration = fileDurationMap.get(file.name) ?? metadataDefaultDuration ?? globalDuration;
+
       newFrames.push({
         id: Math.random().toString(36).substr(2, 9),
         file,
         previewUrl: url,
-        duration: globalDuration,
+        duration: frameDuration,
         x: 0,
         y: 0,
         width: img.naturalWidth,
