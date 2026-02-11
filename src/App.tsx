@@ -14,7 +14,7 @@ import { Timeline } from './components/Timeline';
 import { VirtualFrameList, VirtualFrameListHandle } from './components/VirtualFrameList';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
-import { generateFrameZip } from './utils/zipHelper';
+import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
 import { translations, Language } from './utils/translations';
 import {
   saveSnapshotToDB,
@@ -793,8 +793,36 @@ const App: React.FC = () => {
     let firstImageWidth = 0;
     let firstImageHeight = 0;
 
+    // Expand file list: extract images from ZIP files first
+    const allFiles: File[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const isZip = file.type === 'application/zip' ||
+        file.type === 'application/x-zip-compressed' ||
+        file.name.toLowerCase().endsWith('.zip');
+
+      if (isZip) {
+        try {
+          showLoadingNotification(t.extractingZip.replace('{current}', '0').replace('{total}', '?'));
+          const extractedFiles = await extractFramesFromZip(file, (current, total) => {
+            showLoadingNotification(t.extractingZip.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+          if (extractedFiles.length === 0) {
+            showNotification(t.zipNoImages);
+          } else {
+            allFiles.push(...extractedFiles);
+          }
+        } catch (e) {
+          console.error("Failed to extract ZIP file", e);
+          showNotification(t.zipNoImages);
+        }
+      } else {
+        allFiles.push(file);
+      }
+    }
+
+    for (let i = 0; i < allFiles.length; i++) {
+      const file = allFiles[i];
       if (!file.type.startsWith('image/')) continue;
 
       // Handle GIF files
@@ -837,7 +865,7 @@ const App: React.FC = () => {
         }
       }
 
-      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', files.length.toString()));
+      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', allFiles.length.toString()));
 
       const url = URL.createObjectURL(file);
 
@@ -962,9 +990,37 @@ const App: React.FC = () => {
     let firstImageHeight = 0;
     let hasTransparency = false;
 
-    // Process files
+    // Expand file list: extract images from ZIP files first
+    const allFiles: File[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const isZip = file.type === 'application/zip' ||
+        file.type === 'application/x-zip-compressed' ||
+        file.name.toLowerCase().endsWith('.zip');
+
+      if (isZip) {
+        try {
+          showLoadingNotification(t.extractingZip.replace('{current}', '0').replace('{total}', '?'));
+          const extractedFiles = await extractFramesFromZip(file, (current, total) => {
+            showLoadingNotification(t.extractingZip.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+          if (extractedFiles.length === 0) {
+            showNotification(t.zipNoImages);
+          } else {
+            allFiles.push(...extractedFiles);
+          }
+        } catch (e) {
+          console.error("Failed to extract ZIP file", e);
+          showNotification(t.zipNoImages);
+        }
+      } else {
+        allFiles.push(file);
+      }
+    }
+
+    // Process files
+    for (let i = 0; i < allFiles.length; i++) {
+      const file = allFiles[i];
       if (!file.type.startsWith('image/')) continue;
 
       // Handle GIF files
@@ -1023,7 +1079,7 @@ const App: React.FC = () => {
         }
       }
 
-      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', files.length.toString()));
+      showLoadingNotification(t.importingImages.replace('{current}', (i + 1).toString()).replace('{total}', allFiles.length.toString()));
 
       const url = URL.createObjectURL(file);
 
@@ -2264,7 +2320,7 @@ const App: React.FC = () => {
                 <input
                   type="file"
                   multiple
-                  accept="image/*"
+                  accept="image/*,.zip,application/zip"
                   className="hidden"
                   ref={fileInputRef}
                   onChange={(e) => handleFileUpload(e.target.files)}
@@ -3373,7 +3429,7 @@ const App: React.FC = () => {
                 <input
                   type="file"
                   multiple
-                  accept="image/*"
+                  accept="image/*,.zip,application/zip"
                   className="hidden"
                   ref={insertFileInputRef}
                   onChange={(e) => handleInsertFiles(e.target.files)}

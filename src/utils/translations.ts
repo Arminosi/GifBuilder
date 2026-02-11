@@ -44,6 +44,8 @@ export interface TranslationSchema {
   generating: string;
   importingGif: string;
   importingImages: string;
+  extractingZip: string;
+  zipNoImages: string;
   ready: string;
   close: string;
   download: string;
@@ -203,7 +205,7 @@ export const translations: Record<Language, TranslationSchema> = {
     generate: "Generate GIF",
     dropHere: "Drop images here",
     clickDrag: "Click or Drag images",
-    supports: "Supports PNG, JPG, WEBP",
+    supports: "Supports PNG, JPG, WEBP, GIF, ZIP",
     canvasSettings: "Canvas Settings",
     width: "Width (px)",
     height: "Height (px)",
@@ -232,6 +234,8 @@ export const translations: Record<Language, TranslationSchema> = {
     generating: "Generating GIF...",
     importingGif: "Importing GIF ({current}/{total})...",
     importingImages: "Importing Images ({current}/{total})...",
+    extractingZip: "Extracting ZIP ({current}/{total})...",
+    zipNoImages: "No image files found in the ZIP archive.",
     ready: "GIF Ready!",
     close: "Close",
     download: "Download GIF",
@@ -391,7 +395,7 @@ export const translations: Record<Language, TranslationSchema> = {
     generate: "生成 GIF",
     dropHere: "拖放图片到此处",
     clickDrag: "点击或拖拽上传图片",
-    supports: "支持 PNG, JPG, WEBP",
+    supports: "支持 PNG, JPG, WEBP, GIF, ZIP",
     canvasSettings: "画布设置",
     width: "宽度 (px)",
     height: "高度 (px)",
@@ -420,6 +424,8 @@ export const translations: Record<Language, TranslationSchema> = {
     generating: "正在生成 GIF...",
     importingGif: "导入 GIF ({current}/{total})...",
     importingImages: "导入图片 ({current}/{total})...",
+    extractingZip: "正在解压 ZIP ({current}/{total})...",
+    zipNoImages: "ZIP 压缩包中未找到图片文件。",
     ready: "GIF 制作完成!",
     close: "关闭",
     download: "下载 GIF",
