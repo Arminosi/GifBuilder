@@ -44,21 +44,19 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 
         <div className="p-8 flex-1 overflow-auto custom-scrollbar flex items-center justify-center bg-gray-950/50 min-h-[300px]">
           {!generatedGif ? (
-            <div className="text-center space-y-6 w-full max-w-md px-6">
-              <div className="relative flex items-center justify-center py-4">
-                <div className="absolute inset-0 flex items-center justify-center opacity-10">
-                  <Loader2 size={120} className="animate-spin text-blue-500" />
-                </div>
-                <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-br from-blue-400 to-purple-400 drop-shadow-sm">
-                  {Math.round(progress)}<span className="text-2xl text-gray-500 ml-1">%</span>
-                </div>
+            <div className="text-center space-y-5 w-full max-w-md px-6">
+              <div className="flex items-baseline justify-center gap-1 py-2">
+                <span className="text-4xl font-semibold text-gray-100">
+                  {Math.round(progress)}
+                </span>
+                <span className="text-base font-medium text-gray-500">%</span>
               </div>
 
               <div className="space-y-3">
-                <div className="h-3 bg-gray-800/80 rounded-full overflow-hidden backdrop-blur-sm border border-gray-700 shadow-inner p-[1px]">
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden border border-gray-700/70">
                   <div
-                    className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 rounded-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                    style={{ width: `${Math.max(2, progress)}%` }}
+                    className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${Math.max(0, progress)}%` }}
                   />
                 </div>
                 <p className="text-sm font-medium text-gray-400 h-6 flex items-center justify-center gap-2">
