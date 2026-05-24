@@ -15,6 +15,7 @@ import { VirtualFrameList, VirtualFrameListHandle } from './components/VirtualFr
 import { GlobalFrameTimeline } from './components/GlobalFrameTimeline';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
+import { generateAPNG } from './utils/apngHelper';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
 import { translations, Language } from './utils/translations';
 import {
@@ -144,6 +145,7 @@ const App: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
   const [generatedGif, setGeneratedGif] = useState<string | null>(null);
+  const [generatedFormat, setGeneratedFormat] = useState<'gif' | 'apng'>('gif');
   const [dragActive, setDragActive] = useState(false);
   const [snapshots, setSnapshots] = useState<HistorySnapshot[]>([]);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -156,6 +158,7 @@ const App: React.FC = () => {
   const [fitMode, setFitMode] = useState<'fill' | 'contain'>('fill');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [targetSizeMB, setTargetSizeMB] = useState<string>('');
+  const [exportFormat, setExportFormat] = useState<'gif' | 'apng'>('gif');
 
   // Background Removal State
   const [removeColor, setRemoveColor] = useState<string>('#ffffff');
@@ -1879,23 +1882,39 @@ const App: React.FC = () => {
     setProgress(0);
     setProgressText(t.generation.preparing);
     setGeneratedGif(null);
+    setGeneratedFormat(exportFormat);
 
     try {
       const targetMB = parseFloat(targetSizeMB);
-      const blob = await generateGIF(
-        frames,
-        {
-          ...canvasConfig,
-          enableColorSmoothing,
-          enableGlobalPalette,
-          dither: ditherMethod
-        },
-        (p) => setProgress(p * 100),
-        !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
-        (status) => setProgressText(status),
-        t.generation,
-        isGifTransparentEnabled ? gifTransparentColor : null
-      );
+      const exportConfig = {
+        ...canvasConfig,
+        enableColorSmoothing,
+        enableGlobalPalette,
+        dither: ditherMethod
+      };
+      const apngTexts = {
+        ...t.generation,
+        title: language === 'zh' ? '正在生成 APNG...' : 'Generating APNG...',
+        initializing: language === 'zh' ? '正在初始化 APNG 编码器...' : 'Initializing APNG encoder...',
+        rendering: language === 'zh' ? '正在渲染 APNG... {0}%' : 'Rendering APNG... {0}%'
+      };
+      const blob = exportFormat === 'apng'
+        ? await generateAPNG(
+          frames,
+          exportConfig,
+          (p) => setProgress(p * 100),
+          (status) => setProgressText(status),
+          apngTexts
+        )
+        : await generateGIF(
+          frames,
+          exportConfig,
+          (p) => setProgress(p * 100),
+          !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
+          (status) => setProgressText(status),
+          t.generation,
+          isGifTransparentEnabled ? gifTransparentColor : null
+        );
       const url = URL.createObjectURL(blob);
       setGeneratedGif(url);
 
@@ -2406,6 +2425,23 @@ const App: React.FC = () => {
 
           {/* Export Buttons */}
           <div className="flex items-center gap-2">
+            <div className="flex h-9 rounded-lg border border-gray-700 bg-gray-800/80 p-1">
+              <button
+                onClick={() => setExportFormat('gif')}
+                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'gif' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+              >
+                GIF
+              </button>
+              <button
+                onClick={() => setExportFormat('apng')}
+                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'apng' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+              >
+                APNG
+              </button>
+            </div>
+
             <button
               onClick={() => handleExportZip(frames)}
               disabled={frames.length === 0 || isZipping}
@@ -2422,7 +2458,7 @@ const App: React.FC = () => {
               className="h-9 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all tracking-wide"
             >
               {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
-              <span className="hidden sm:inline">{t.generate}</span>
+              <span className="hidden sm:inline">{exportFormat === 'apng' ? (language === 'zh' ? '生成 APNG' : 'Generate APNG') : t.generate}</span>
             </button>
           </div>
         </div>
@@ -2559,56 +2595,58 @@ const App: React.FC = () => {
                     </div>
 
                     {canvasConfig.transparent ? (
-                      <div className="space-y-2 pt-1 px-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-gray-500">{t.bgRemoval.gifTransparent}</span>
-                          <div className="flex bg-gray-800 rounded border border-gray-700 p-0.5 scale-90 origin-right">
-                            <button
-                              onClick={() => setIsGifTransparentEnabled(false)}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                            >
-                              {t.bgRemoval.auto}
-                            </button>
-                            <button
-                              onClick={() => setIsGifTransparentEnabled(true)}
-                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${isGifTransparentEnabled ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                            >
-                              {t.bgRemoval.manual}
-                            </button>
-                          </div>
-                        </div>
-
-                        {isGifTransparentEnabled && (
-                          <div className="flex gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
-                            <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
-                              <div
-                                className="w-4 h-4 rounded border border-gray-600 shadow-sm"
-                                style={{ backgroundColor: gifTransparentColor }}
-                              />
-                              <input
-                                type="text"
-                                value={gifTransparentColor}
-                                onChange={(e) => setGifTransparentColor(e.target.value)}
-                                className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
-                              />
-                              <input
-                                type="color"
-                                value={gifTransparentColor}
-                                onChange={(e) => setGifTransparentColor(e.target.value)}
-                                className="w-6 h-6 opacity-0 absolute cursor-pointer"
-                                title="Picker"
-                              />
+                      exportFormat === 'gif' ? (
+                        <div className="space-y-2 pt-1 px-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-500">{t.bgRemoval.gifTransparent}</span>
+                            <div className="flex bg-gray-800 rounded border border-gray-700 p-0.5 scale-90 origin-right">
+                              <button
+                                onClick={() => setIsGifTransparentEnabled(false)}
+                                className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                              >
+                                {t.bgRemoval.auto}
+                              </button>
+                              <button
+                                onClick={() => setIsGifTransparentEnabled(true)}
+                                className={`px-2 py-0.5 text-[10px] rounded transition-colors ${isGifTransparentEnabled ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                              >
+                                {t.bgRemoval.manual}
+                              </button>
                             </div>
-                            <button
-                              onClick={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
-                              className={`p-2 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
-                              title={t.bgRemoval.eyeDropper}
-                            >
-                              <Pipette size={14} />
-                            </button>
                           </div>
-                        )}
-                      </div>
+
+                          {isGifTransparentEnabled && (
+                            <div className="flex gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
+                              <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
+                                <div
+                                  className="w-4 h-4 rounded border border-gray-600 shadow-sm"
+                                  style={{ backgroundColor: gifTransparentColor }}
+                                />
+                                <input
+                                  type="text"
+                                  value={gifTransparentColor}
+                                  onChange={(e) => setGifTransparentColor(e.target.value)}
+                                  className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
+                                />
+                                <input
+                                  type="color"
+                                  value={gifTransparentColor}
+                                  onChange={(e) => setGifTransparentColor(e.target.value)}
+                                  className="w-6 h-6 opacity-0 absolute cursor-pointer"
+                                  title="Picker"
+                                />
+                              </div>
+                              <button
+                                onClick={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
+                                className={`p-2 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
+                                title={t.bgRemoval.eyeDropper}
+                              >
+                                <Pipette size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null
                     ) : (
                       <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
                         <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 transition-colors hover:border-gray-600">
@@ -2645,155 +2683,165 @@ const App: React.FC = () => {
               {/* Section: Export Settings */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.export}</h3>
-                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 font-medium">{t.outputControl.targetSize}:</span>
-                    <div className="flex-1 relative">
-                      <input
-                        type="number"
-                        placeholder={t.outputControl.unlimited}
-                        value={targetSizeMB}
-                        onChange={(e) => setTargetSizeMB(e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm min-w-0 focus:border-blue-500 focus:outline-none pr-8"
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">MB</span>
+                {exportFormat === 'gif' ? (
+                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400 font-medium">{t.outputControl.targetSize}:</span>
+                      <div className="flex-1 relative">
+                        <input
+                          type="number"
+                          placeholder={t.outputControl.unlimited}
+                          value={targetSizeMB}
+                          onChange={(e) => setTargetSizeMB(e.target.value)}
+                          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm min-w-0 focus:border-blue-500 focus:outline-none pr-8"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">MB</span>
+                      </div>
                     </div>
-                  </div>
-                  <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">{t.outputControl.autoAdjust}</p>
+                    <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">{t.outputControl.autoAdjust}</p>
 
-                  {/* Color Smoothing Toggle */}
-                  <div className="mt-4 pt-4 border-t border-gray-800">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
-                            {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
-                          </label>
-                          <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
-                            {language === 'zh'
-                              ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
-                              : 'Automatically smooth similar colors between frames to reduce color flickering'}
-                          </p>
-                        </div>
-                        <button
-                          id="color-smoothing-toggle"
-                          onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
-                            }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
+                    {/* Color Smoothing Toggle */}
+                    <div className="mt-4 pt-4 border-t border-gray-800">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
+                              {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
+                            </label>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                              {language === 'zh'
+                                ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
+                                : 'Automatically smooth similar colors between frames to reduce color flickering'}
+                            </p>
+                          </div>
+                          <button
+                            id="color-smoothing-toggle"
+                            onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
                               }`}
-                          />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 pr-3">
-                          <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="global-palette-toggle">
-                            {language === 'zh' ? '全局调色板' : 'Global Palette'}
-                          </label>
-                          <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
-                            {language === 'zh'
-                              ? '所有帧共用第一帧生成的调色板，减少同色在帧间跳色'
-                              : 'Use one palette across frames to reduce color shifts between frames'}
-                          </p>
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                            />
+                          </button>
                         </div>
-                        <button
-                          id="global-palette-toggle"
-                          onClick={() => setEnableGlobalPalette(!enableGlobalPalette)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableGlobalPalette ? 'bg-blue-600' : 'bg-gray-700'
-                            }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableGlobalPalette ? 'translate-x-6' : 'translate-x-1'
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 pr-3">
+                            <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="global-palette-toggle">
+                              {language === 'zh' ? '全局调色板' : 'Global Palette'}
+                            </label>
+                            <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                              {language === 'zh'
+                                ? '所有帧共用第一帧生成的调色板，减少同色在帧间跳色'
+                                : 'Use one palette across frames to reduce color shifts between frames'}
+                            </p>
+                          </div>
+                          <button
+                            id="global-palette-toggle"
+                            onClick={() => setEnableGlobalPalette(!enableGlobalPalette)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableGlobalPalette ? 'bg-blue-600' : 'bg-gray-700'
                               }`}
-                          />
-                        </button>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-gray-400 font-medium" htmlFor="dither-method-button">
-                          {language === 'zh' ? '抖动策略' : 'Dithering'}
-                        </label>
-                        {(() => {
-                          const selectedDither = DITHER_OPTIONS.find(option => option.value === (ditherMethod || 'none')) || DITHER_OPTIONS[0];
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableGlobalPalette ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                            />
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-gray-400 font-medium" htmlFor="dither-method-button">
+                            {language === 'zh' ? '抖动策略' : 'Dithering'}
+                          </label>
+                          {(() => {
+                            const selectedDither = DITHER_OPTIONS.find(option => option.value === (ditherMethod || 'none')) || DITHER_OPTIONS[0];
 
-                          return (
-                            <div ref={ditherMenuRef} className="relative">
-                              <button
-                                id="dither-method-button"
-                                type="button"
-                                onClick={() => setIsDitherMenuOpen(!isDitherMenuOpen)}
-                                className={`w-full min-h-[48px] rounded border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${isDitherMenuOpen ? 'border-blue-500 bg-gray-800' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                                  }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="text-xs font-medium text-gray-200 truncate">{selectedDither.label[language]}</div>
-                                    <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{selectedDither.description[language]}</div>
+                            return (
+                              <div ref={ditherMenuRef} className="relative">
+                                <button
+                                  id="dither-method-button"
+                                  type="button"
+                                  onClick={() => setIsDitherMenuOpen(!isDitherMenuOpen)}
+                                  className={`w-full min-h-[48px] rounded border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${isDitherMenuOpen ? 'border-blue-500 bg-gray-800' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
+                                    }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-medium text-gray-200 truncate">{selectedDither.label[language]}</div>
+                                      <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{selectedDither.description[language]}</div>
+                                    </div>
+                                    <ChevronDown
+                                      size={14}
+                                      className={`shrink-0 text-gray-500 transition-transform ${isDitherMenuOpen ? 'rotate-180' : ''}`}
+                                    />
                                   </div>
-                                  <ChevronDown
-                                    size={14}
-                                    className={`shrink-0 text-gray-500 transition-transform ${isDitherMenuOpen ? 'rotate-180' : ''}`}
-                                  />
-                                </div>
-                              </button>
+                                </button>
 
-                              {isDitherMenuOpen && (
-                                <div className="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-xl shadow-black/40">
-                                  {DITHER_OPTIONS.map((option) => {
-                                    const isSelected = option.value === selectedDither.value;
+                                {isDitherMenuOpen && (
+                                  <div className="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-xl shadow-black/40">
+                                    {DITHER_OPTIONS.map((option) => {
+                                      const isSelected = option.value === selectedDither.value;
 
-                                    return (
-                                      <button
-                                        key={option.value}
-                                        type="button"
-                                        onClick={() => {
-                                          setDitherMethod(option.value === 'none' ? false : option.value as CanvasConfig['dither']);
-                                          setIsDitherMenuOpen(false);
-                                        }}
-                                        className={`w-full px-3 py-2.5 text-left transition-colors ${isSelected ? 'bg-blue-600/20' : 'hover:bg-gray-800'
-                                          }`}
-                                      >
-                                        <div className="flex items-start gap-2">
-                                          <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
-                                            {isSelected && <Check size={13} className="text-blue-400" />}
-                                          </div>
-                                          <div className="min-w-0 flex-1">
-                                            <div className={`text-xs font-medium ${isSelected ? 'text-blue-200' : 'text-gray-200'}`}>
-                                              {option.label[language]}
+                                      return (
+                                        <button
+                                          key={option.value}
+                                          type="button"
+                                          onClick={() => {
+                                            setDitherMethod(option.value === 'none' ? false : option.value as CanvasConfig['dither']);
+                                            setIsDitherMenuOpen(false);
+                                          }}
+                                          className={`w-full px-3 py-2.5 text-left transition-colors ${isSelected ? 'bg-blue-600/20' : 'hover:bg-gray-800'
+                                            }`}
+                                        >
+                                          <div className="flex items-start gap-2">
+                                            <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                                              {isSelected && <Check size={13} className="text-blue-400" />}
                                             </div>
-                                            <div className="mt-1 text-[10px] leading-relaxed text-gray-500">
-                                              {option.description[language]}
-                                            </div>
-                                            <div className="mt-1 grid gap-1 text-[10px] leading-relaxed sm:grid-cols-2">
-                                              <div className="rounded bg-emerald-950/30 px-2 py-1 text-emerald-300/90">
-                                                <span className="font-medium">{language === 'zh' ? '优势：' : 'Pros: '}</span>
-                                                {option.pros[language]}
+                                            <div className="min-w-0 flex-1">
+                                              <div className={`text-xs font-medium ${isSelected ? 'text-blue-200' : 'text-gray-200'}`}>
+                                                {option.label[language]}
                                               </div>
-                                              <div className="rounded bg-amber-950/30 px-2 py-1 text-amber-300/90">
-                                                <span className="font-medium">{language === 'zh' ? '代价：' : 'Cons: '}</span>
-                                                {option.cons[language]}
+                                              <div className="mt-1 text-[10px] leading-relaxed text-gray-500">
+                                                {option.description[language]}
+                                              </div>
+                                              <div className="mt-1 grid gap-1 text-[10px] leading-relaxed sm:grid-cols-2">
+                                                <div className="rounded bg-emerald-950/30 px-2 py-1 text-emerald-300/90">
+                                                  <span className="font-medium">{language === 'zh' ? '优势：' : 'Pros: '}</span>
+                                                  {option.pros[language]}
+                                                </div>
+                                                <div className="rounded bg-amber-950/30 px-2 py-1 text-amber-300/90">
+                                                  <span className="font-medium">{language === 'zh' ? '代价：' : 'Cons: '}</span>
+                                                  {option.cons[language]}
+                                                </div>
                                               </div>
                                             </div>
                                           </div>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                        <p className="text-[10px] text-gray-600 leading-relaxed">
-                          {language === 'zh'
-                            ? '统一选择一种策略会让所有帧使用同一抖动算法；不等于统一调色板，可与全局调色板一起使用。'
-                            : 'The selected method is applied to every frame. It is separate from Global Palette and can be used together.'}
-                        </p>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          <p className="text-[10px] text-gray-600 leading-relaxed">
+                            {language === 'zh'
+                              ? '统一选择一种策略会让所有帧使用同一抖动算法；不等于统一调色板，可与全局调色板一起使用。'
+                              : 'The selected method is applied to every frame. It is separate from Global Palette and can be used together.'}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      {language === 'zh'
+                        ? 'APNG 会保留完整颜色和 Alpha 透明度，不使用 GIF 的调色板、抖动、透明色键或目标大小压缩设置。'
+                        : 'APNG preserves full color and alpha, so GIF palette, dithering, transparency key, and target-size compression settings are hidden.'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Section: Batch Operations */}
@@ -3738,6 +3786,7 @@ const App: React.FC = () => {
         progress={progress}
         progressText={progressText}
         generatedGif={generatedGif}
+        format={generatedFormat}
         onClose={() => setGeneratedGif(null)}
         t={{
           close: t.close,

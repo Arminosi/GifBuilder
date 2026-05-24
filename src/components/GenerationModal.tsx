@@ -6,6 +6,7 @@ interface GenerationModalProps {
   progress: number;
   progressText: string;
   generatedGif: string | null;
+  format?: 'gif' | 'apng';
   onClose: () => void;
   t: {
     close: string;
@@ -20,6 +21,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
   progress,
   progressText,
   generatedGif,
+  format = 'gif',
   onClose,
   t
 }) => {
@@ -90,7 +92,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
             </button>
             <a
               href={generatedGif}
-              download={`animation-${Date.now()}.gif`}
+              download={`animation-${Date.now()}.${format === 'apng' ? 'png' : 'gif'}`}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20 flex items-center gap-2"
             >
               {t.download}
