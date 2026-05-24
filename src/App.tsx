@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Upload, Play, Download, Trash2, Undo2, Redo2,
   History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock, Merge, Scissors, Film
+  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock, Merge, Scissors, Film, ChevronDown
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
@@ -43,6 +43,73 @@ const TAG_COLORS = [
   '#3b82f6', // blue
   '#a855f7', // purple
   '#ec4899', // pink
+];
+
+type DitherOptionValue = Exclude<CanvasConfig['dither'], false> | 'none';
+
+const DITHER_OPTIONS: Array<{
+  value: DitherOptionValue;
+  label: Record<Language, string>;
+  description: Record<Language, string>;
+  pros: Record<Language, string>;
+  cons: Record<Language, string>;
+}> = [
+  {
+    value: 'none',
+    label: { en: 'Off', zh: '关闭' },
+    description: { en: 'No dithering. Keeps flat colors clean and predictable.', zh: '不启用抖动，保持纯色区域干净稳定。' },
+    pros: { en: 'Least frame noise, smallest flicker risk.', zh: '噪点最少，帧间闪烁风险最低。' },
+    cons: { en: 'Gradients may show stronger color bands.', zh: '渐变区域更容易出现色带。' }
+  },
+  {
+    value: 'FloydSteinberg',
+    label: { en: 'Floyd Steinberg', zh: '弗洛伊德-斯坦伯格' },
+    description: { en: 'Classic error diffusion with strong gradient detail.', zh: '经典误差扩散算法，渐变细节保留较强。' },
+    pros: { en: 'Good for photos and smooth gradients.', zh: '适合照片和柔和渐变。' },
+    cons: { en: 'Can create animated grain between frames.', zh: '可能产生帧间颗粒跳动。' }
+  },
+  {
+    value: 'FloydSteinberg-serpentine',
+    label: { en: 'Floyd Steinberg Serpentine', zh: '弗洛伊德-斯坦伯格 蛇形' },
+    description: { en: 'Alternates scan direction to reduce directional texture.', zh: '交替扫描方向，降低固定方向纹理。' },
+    pros: { en: 'More balanced texture than standard Floyd.', zh: '纹理比标准算法更均衡。' },
+    cons: { en: 'Still may shimmer on motion.', zh: '运动画面仍可能闪烁。' }
+  },
+  {
+    value: 'FalseFloydSteinberg',
+    label: { en: 'False Floyd Steinberg', zh: '简化弗洛伊德-斯坦伯格' },
+    description: { en: 'A lighter diffusion pattern with less processing.', zh: '更轻量的误差扩散模式。' },
+    pros: { en: 'Faster, softer than full Floyd.', zh: '速度更快，颗粒感较轻。' },
+    cons: { en: 'Less accurate on complex gradients.', zh: '复杂渐变还原较弱。' }
+  },
+  {
+    value: 'Stucki',
+    label: { en: 'Stucki', zh: '斯塔基' },
+    description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '把误差扩散到更大范围，色调过渡更平滑。' },
+    pros: { en: 'Smooth gradients, richer perceived detail.', zh: '渐变更顺，感知细节更丰富。' },
+    cons: { en: 'More visible texture and larger files.', zh: '纹理更明显，文件可能更大。' }
+  },
+  {
+    value: 'Stucki-serpentine',
+    label: { en: 'Stucki Serpentine', zh: '斯塔基 蛇形' },
+    description: { en: 'Stucki with alternating scan direction.', zh: '蛇形扫描版本的斯塔基算法。' },
+    pros: { en: 'Smoother large gradients with less directional bias.', zh: '大面积渐变更顺，方向性更弱。' },
+    cons: { en: 'Can be noisy in animation.', zh: '动画中可能出现较多噪点。' }
+  },
+  {
+    value: 'Atkinson',
+    label: { en: 'Atkinson', zh: '阿特金森' },
+    description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '较克制的扩散方式，观感清爽偏复古。' },
+    pros: { en: 'Crisp edges, often less muddy.', zh: '边缘清晰，不容易发灰。' },
+    cons: { en: 'May lose subtle shadow detail.', zh: '暗部和细微层次可能丢失。' }
+  },
+  {
+    value: 'Atkinson-serpentine',
+    label: { en: 'Atkinson Serpentine', zh: '阿特金森 蛇形' },
+    description: { en: 'Atkinson with alternating scan direction.', zh: '蛇形扫描版本的阿特金森算法。' },
+    pros: { en: 'Crisp result with more even texture.', zh: '清晰且纹理更均匀。' },
+    cons: { en: 'Less faithful for soft photos.', zh: '柔和照片的还原度较低。' }
+  }
 ];
 
 interface AppState {
@@ -102,6 +169,9 @@ const App: React.FC = () => {
 
   // Color Smoothing State
   const [enableColorSmoothing, setEnableColorSmoothing] = useState(false);
+  const [enableGlobalPalette, setEnableGlobalPalette] = useState(false);
+  const [ditherMethod, setDitherMethod] = useState<CanvasConfig['dither']>(false);
+  const [isDitherMenuOpen, setIsDitherMenuOpen] = useState(false);
 
   // Notification State
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
@@ -178,6 +248,7 @@ const App: React.FC = () => {
   // Refs for preview loop to access latest state without restarting loop
   const selectedFrameIdsRef = useRef(selectedFrameIds);
   const syncPreviewSelectionRef = useRef(syncPreviewSelection);
+  const ditherMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     selectedFrameIdsRef.current = selectedFrameIds;
@@ -186,6 +257,30 @@ const App: React.FC = () => {
   useEffect(() => {
     syncPreviewSelectionRef.current = syncPreviewSelection;
   }, [syncPreviewSelection]);
+
+  useEffect(() => {
+    if (!isDitherMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (ditherMenuRef.current && !ditherMenuRef.current.contains(event.target as Node)) {
+        setIsDitherMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDitherMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDitherMenuOpen]);
 
   // Auto-scroll VirtualFrameList to selected frame
   useEffect(() => {
@@ -1759,7 +1854,9 @@ const App: React.FC = () => {
         frames,
         {
           ...canvasConfig,
-          enableColorSmoothing
+          enableColorSmoothing,
+          enableGlobalPalette,
+          dither: ditherMethod
         },
         (p) => setProgress(p * 100),
         !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
@@ -2534,28 +2631,134 @@ const App: React.FC = () => {
 
                   {/* Color Smoothing Toggle */}
                   <div className="mt-4 pt-4 border-t border-gray-800">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
-                          {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
+                            {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
+                          </label>
+                          <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                            {language === 'zh'
+                              ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
+                              : 'Automatically smooth similar colors between frames to reduce color flickering'}
+                          </p>
+                        </div>
+                        <button
+                          id="color-smoothing-toggle"
+                          onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 pr-3">
+                          <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="global-palette-toggle">
+                            {language === 'zh' ? '全局调色板' : 'Global Palette'}
+                          </label>
+                          <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                            {language === 'zh'
+                              ? '所有帧共用第一帧生成的调色板，减少同色在帧间跳色'
+                              : 'Use one palette across frames to reduce color shifts between frames'}
+                          </p>
+                        </div>
+                        <button
+                          id="global-palette-toggle"
+                          onClick={() => setEnableGlobalPalette(!enableGlobalPalette)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableGlobalPalette ? 'bg-blue-600' : 'bg-gray-700'
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableGlobalPalette ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-gray-400 font-medium" htmlFor="dither-method-button">
+                          {language === 'zh' ? '抖动策略' : 'Dithering'}
                         </label>
-                        <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+                        {(() => {
+                          const selectedDither = DITHER_OPTIONS.find(option => option.value === (ditherMethod || 'none')) || DITHER_OPTIONS[0];
+
+                          return (
+                            <div ref={ditherMenuRef} className="relative">
+                              <button
+                                id="dither-method-button"
+                                type="button"
+                                onClick={() => setIsDitherMenuOpen(!isDitherMenuOpen)}
+                                className={`w-full min-h-[48px] rounded border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${isDitherMenuOpen ? 'border-blue-500 bg-gray-800' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
+                                  }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-medium text-gray-200 truncate">{selectedDither.label[language]}</div>
+                                    <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{selectedDither.description[language]}</div>
+                                  </div>
+                                  <ChevronDown
+                                    size={14}
+                                    className={`shrink-0 text-gray-500 transition-transform ${isDitherMenuOpen ? 'rotate-180' : ''}`}
+                                  />
+                                </div>
+                              </button>
+
+                              {isDitherMenuOpen && (
+                                <div className="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-xl shadow-black/40">
+                                  {DITHER_OPTIONS.map((option) => {
+                                    const isSelected = option.value === selectedDither.value;
+
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => {
+                                          setDitherMethod(option.value === 'none' ? false : option.value as CanvasConfig['dither']);
+                                          setIsDitherMenuOpen(false);
+                                        }}
+                                        className={`w-full px-3 py-2.5 text-left transition-colors ${isSelected ? 'bg-blue-600/20' : 'hover:bg-gray-800'
+                                          }`}
+                                      >
+                                        <div className="flex items-start gap-2">
+                                          <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                                            {isSelected && <Check size={13} className="text-blue-400" />}
+                                          </div>
+                                          <div className="min-w-0 flex-1">
+                                            <div className={`text-xs font-medium ${isSelected ? 'text-blue-200' : 'text-gray-200'}`}>
+                                              {option.label[language]}
+                                            </div>
+                                            <div className="mt-1 text-[10px] leading-relaxed text-gray-500">
+                                              {option.description[language]}
+                                            </div>
+                                            <div className="mt-1 grid gap-1 text-[10px] leading-relaxed sm:grid-cols-2">
+                                              <div className="rounded bg-emerald-950/30 px-2 py-1 text-emerald-300/90">
+                                                <span className="font-medium">{language === 'zh' ? '优势：' : 'Pros: '}</span>
+                                                {option.pros[language]}
+                                              </div>
+                                              <div className="rounded bg-amber-950/30 px-2 py-1 text-amber-300/90">
+                                                <span className="font-medium">{language === 'zh' ? '代价：' : 'Cons: '}</span>
+                                                {option.cons[language]}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-[10px] text-gray-600 leading-relaxed">
                           {language === 'zh'
-                            ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
-                            : 'Automatically smooth similar colors between frames to reduce color flickering'}
+                            ? '统一选择一种策略会让所有帧使用同一抖动算法；不等于统一调色板，可与全局调色板一起使用。'
+                            : 'The selected method is applied to every frame. It is separate from Global Palette and can be used together.'}
                         </p>
                       </div>
-                      <button
-                        id="color-smoothing-toggle"
-                        onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
-                          }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                        />
-                      </button>
                     </div>
                   </div>
                 </div>
