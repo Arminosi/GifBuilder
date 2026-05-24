@@ -2840,8 +2840,8 @@ const App: React.FC = () => {
                 {exportFormat === 'gif'
                   ? t.generate
                   : exportFormat === 'apng'
-                    ? (language === 'zh' ? '鐢熸垚 APNG' : 'Generate APNG')
-                    : (language === 'zh' ? '鐢熸垚 WebP' : 'Generate WebP')}
+                    ? (language === 'zh' ? '生成 APNG' : 'Generate APNG')
+                    : (language === 'zh' ? '生成 WebP' : 'Generate WebP')}
               </span>
             </button>
           </div>
