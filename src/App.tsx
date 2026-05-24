@@ -1,18 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  Upload, Play, Download, Trash2, Undo2, Redo2,
-  History, Save, ArrowDownAZ, ArrowUpAZ, Loader2, ImagePlus, Languages, X as XIcon, Maximize, Scaling,
-  Eye, Monitor, Palette, AlertCircle, Check, PanelLeft, Layout, Minimize2, CheckSquare, Layers, Package, Copy, Plus, FilePlus, ClipboardCopy, ClipboardPaste, RotateCcw, SlidersHorizontal, ZoomIn, ZoomOut, List, Pin, PinOff, AlignCenter, ScanEye, Pipette, Eraser, Rows, Columns, Lock, Unlock, Merge, Scissors, Film, ChevronDown
-} from 'lucide-react';
+import { ImagePlus, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
-import { FrameData, CanvasConfig, HistorySnapshot } from './types';
-import { FrameItem, FrameCard } from './components/FrameItem';
-import { CanvasEditor } from './components/CanvasEditor';
-import { Timeline } from './components/Timeline';
+import { FrameData, CanvasConfig, HistorySnapshot, PendingVideoImport, FrameContextMenuState } from './types';
+import { FrameCard } from './components/FrameItem';
+import { CanvasWorkspace } from './components/CanvasWorkspace';
+import { FileDropOverlay } from './components/FileDropOverlay';
+import { FrameContextMenu } from './components/FrameContextMenu';
+import { FrameListControls } from './components/FrameListControls';
 import { VirtualFrameList, VirtualFrameListHandle } from './components/VirtualFrameList';
-import { GlobalFrameTimeline } from './components/GlobalFrameTimeline';
+import { AppHeader } from './components/AppHeader';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
 import { generateAPNG } from './utils/apngHelper';
@@ -25,10 +23,24 @@ import {
   clearSnapshotsFromDB
 } from './utils/storage';
 import { GenerationModal } from './components/GenerationModal';
+import { HistorySnapshotsDrawer } from './components/HistorySnapshotsDrawer';
+import { HistoryStackPanel } from './components/HistoryStackPanel';
+import { InsertFilesModal } from './components/InsertFilesModal';
+import { MobileBottomTabBar } from './components/MobileBottomTabBar';
+import { NotificationToast } from './components/NotificationToast';
+import { SidebarBatchOperationsPanel } from './components/SidebarBatchOperationsPanel';
+import { SidebarCanvasSettingsPanel } from './components/SidebarCanvasSettingsPanel';
+import { SidebarDangerZone } from './components/SidebarDangerZone';
+import { SidebarExportSettingsPanel } from './components/SidebarExportSettingsPanel';
+import { SidebarFooterLinks } from './components/SidebarFooterLinks';
+import { SidebarImageProcessingPanel } from './components/SidebarImageProcessingPanel';
+import { SidebarUploadArea } from './components/SidebarUploadArea';
+import { TransparentConfirmDialog } from './components/TransparentConfirmDialog';
+import { VideoImportModal } from './components/VideoImportModal';
 import { parseGifFrames } from './utils/gifParser';
 import { parseAPNGFrames } from './utils/apngParser';
 import { parseWebPFrames } from './utils/webpParser';
-import { extractVideoFrames, getVideoMetadata, VideoMetadata } from './utils/videoHelper';
+import { extractVideoFrames, getVideoMetadata } from './utils/videoHelper';
 
 // Initial states
 const INITIAL_CANVAS_CONFIG: CanvasConfig = {
@@ -51,20 +63,6 @@ const TAG_COLORS = [
 ];
 
 type DitherOptionValue = Exclude<CanvasConfig['dither'], false> | 'none';
-
-interface PendingVideoImport {
-  files: File[];
-  mode: 'append' | 'insert';
-  insertIndex: number | null;
-  metadata: VideoMetadata;
-  previewUrl: string;
-  settings: {
-    fps: number;
-    startTime: number;
-    endTime: number;
-    maxWidth: number;
-  };
-}
 
 const DITHER_OPTIONS: Array<{
   value: DitherOptionValue;
@@ -236,7 +234,7 @@ const App: React.FC = () => {
   const [githubLinkConfirm, setGithubLinkConfirm] = useState(false);
 
   // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, insertIndex: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<FrameContextMenuState | null>(null);
   // Insert Modal State
   const [showInsertModal, setShowInsertModal] = useState(false);
   const [insertTargetIndex, setInsertTargetIndex] = useState<number | null>(null);
@@ -2611,261 +2609,46 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden" onDragEnter={handleDrag}>
-      <style>{`
-        @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes slideOutDown {
-          from {
-            opacity: 1;
-            transform: translateY(0);
-          }
-          to {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes fadeOut {
-          from { opacity: 1; }
-          to { opacity: 0; }
-        }
-        @keyframes scaleIn {
-          from {
-            opacity: 0;
-            transform: translate(-50%, -50%) scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-          }
-        }
-        @keyframes scaleOut {
-          from {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-          }
-          to {
-            opacity: 0;
-            transform: translate(-50%, -50%) scale(0.9);
-          }
-        }
-        .animate-slide-in-up {
-          animation: slideInUp 0.3s ease-out forwards;
-        }
-        .animate-slide-out-down {
-          animation: slideOutDown 0.25s ease-in forwards;
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.2s ease-out forwards;
-        }
-        .animate-fade-out {
-          animation: fadeOut 0.2s ease-in forwards;
-        }
-        .animate-scale-in {
-          animation: scaleIn 0.3s ease-out forwards;
-        }
-        .animate-scale-out {
-          animation: scaleOut 0.25s ease-in forwards;
-        }
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: #4b5563 transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background-color: #374151;
-          border-radius: 20px;
-          border: 2px solid transparent;
-          background-clip: content-box;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background-color: #4b5563;
-        }
-
-        /* Number Input Spin Buttons Style Optimization for Dark Mode */
-        input[type="number"] {
-          color-scheme: dark;
-        }
-        
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-          opacity: 0.2;
-          transition: opacity 0.2s;
-          cursor: pointer;
-          margin-left: 2px;
-        }
-        
-        input[type="number"]:hover::-webkit-inner-spin-button,
-        input[type="number"]:hover::-webkit-outer-spin-button,
-        input[type="number"]:focus::-webkit-inner-spin-button,
-        input[type="number"]:focus::-webkit-outer-spin-button {
-          opacity: 1;
-        }
-      `}</style>
-
-      {/* Header */}
-      <header className="h-14 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between px-3 lg:px-6 shrink-0 z-20 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`p-2 rounded-lg hover:bg-gray-800 transition-colors ${!isSidebarOpen ? 'bg-gray-800 text-blue-400' : 'text-gray-400'}`}
-            title={t.toggleSidebar}
-          >
-            <PanelLeft size={20} />
-          </button>
-
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm hidden sm:flex">
-            <Film size={18} className="stroke-[2.5]" />
-          </div>
-          <h1 className="text-lg lg:text-xl font-bold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent tracking-tight hidden sm:block">
-            GifBuilder
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Language Switcher */}
-          <button
-            onClick={toggleLanguage}
-            className="h-9 px-3 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white flex items-center gap-2 border border-transparent hover:border-gray-700"
-            title={language === 'en' ? "Switch to Chinese" : "Switch to English"}
-          >
-            <Languages size={16} />
-            <span className="text-xs font-semibold hidden sm:inline tracking-wide">{language === 'en' ? 'EN' : '中文'}</span>
-          </button>
-
-          <div className="h-6 w-px bg-gray-800 mx-0.5"></div>
-
-          {/* History Controls */}
-          <div className="relative">
-            <div className="flex items-center bg-gray-800/80 rounded-lg p-1 border border-gray-700 h-9">
-              <button
-                onClick={undo} disabled={!canUndo}
-                className="w-7 h-7 flex items-center justify-center hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                title={t.undo}
-              >
-                <Undo2 size={14} />
-              </button>
-              <div className="w-px h-3.5 bg-gray-700 mx-0.5" />
-              <button
-                onClick={redo} disabled={!canRedo}
-                className="w-7 h-7 flex items-center justify-center hover:bg-gray-700 rounded disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                title={t.redo}
-              >
-                <Redo2 size={14} />
-              </button>
-              <div className="w-px h-3.5 bg-gray-700 mx-0.5" />
-              <button
-                onClick={() => setShowHistoryStack(!showHistoryStack)}
-                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${showHistoryStack ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}
-                title="History Stack"
-              >
-                <List size={14} />
-              </button>
-            </div>
-
-            {/* History Stack Panel */}
-          </div>
-
-          <button
-            onClick={() => setShowSnapshots(!showSnapshots)}
-            className={`h-9 px-3 rounded-lg border transition-all flex items-center gap-2 ${showSnapshots ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300'}`}
-          >
-            <History size={16} />
-            <span className="hidden md:inline text-xs font-semibold tracking-wide">{t.records}</span>
-            {snapshots.length > 0 && (
-              <span className="bg-blue-500 text-white text-[10px] px-1.5 h-4 flex items-center rounded-full font-bold">{snapshots.length}</span>
-            )}
-          </button>
-
-          {/* Export Buttons */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 rounded-lg border border-gray-700 bg-gray-800/80 p-1">
-              <button
-                onClick={() => setExportFormat('gif')}
-                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'gif' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
-                  }`}
-              >
-                GIF
-              </button>
-              <button
-                onClick={() => setExportFormat('apng')}
-                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'apng' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
-                  }`}
-              >
-                APNG
-              </button>
-              <button
-                onClick={() => setExportFormat('webp')}
-                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'webp' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
-                  }`}
-              >
-                WebP
-              </button>
-            </div>
-
-            <button
-              onClick={() => handleExportZip(frames)}
-              disabled={frames.length === 0 || isZipping}
-              className="h-9 px-3 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 border border-gray-700 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all"
-              title={t.exportZip}
-            >
-              {isZipping ? <Loader2 size={16} className="animate-spin" /> : <Package size={16} />}
-              <span className="hidden xl:inline">{t.exportZip}</span>
-            </button>
-
-            <button
-              onClick={handleGenerate}
-              disabled={frames.length === 0 || isGenerating}
-              className="h-9 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all tracking-wide"
-            >
-              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
-              <span className="hidden sm:inline">
-                {exportFormat === 'gif'
-                  ? t.generate
-                  : exportFormat === 'apng'
-                    ? (language === 'zh' ? '生成 APNG' : 'Generate APNG')
-                    : (language === 'zh' ? '生成 WebP' : 'Generate WebP')}
-              </span>
-            </button>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        language={language}
+        labels={{
+          toggleSidebar: t.toggleSidebar,
+          undo: t.undo,
+          redo: t.redo,
+          records: t.records,
+          exportZip: t.exportZip,
+          generate: t.generate,
+        }}
+        isSidebarOpen={isSidebarOpen}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        showHistoryStack={showHistoryStack}
+        showSnapshots={showSnapshots}
+        snapshotsCount={snapshots.length}
+        exportFormat={exportFormat}
+        frameCount={frames.length}
+        isZipping={isZipping}
+        isGenerating={isGenerating}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onToggleLanguage={toggleLanguage}
+        onUndo={undo}
+        onRedo={redo}
+        onToggleHistoryStack={() => setShowHistoryStack(!showHistoryStack)}
+        onToggleSnapshots={() => setShowSnapshots(!showSnapshots)}
+        onExportFormatChange={setExportFormat}
+        onExportZip={() => handleExportZip(frames)}
+        onGenerate={handleGenerate}
+      />
 
       {/* Main Content */}
       <div id="main-layout-container" className="flex flex-col lg:flex-row flex-1 overflow-hidden relative min-h-0">
 
-        {/* Drag Overlay */}
-        {dragActive && (
-          <div
-            className="absolute inset-0 bg-blue-500/20 border-4 border-blue-500 border-dashed z-[100] flex items-center justify-center backdrop-blur-sm"
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            <div className="bg-gray-900 p-8 rounded-xl shadow-2xl flex flex-col items-center pointer-events-none">
-              <Upload size={48} className="text-blue-400 mb-4" />
-              <h2 className="text-2xl font-bold text-white">{t.dropHere}</h2>
-            </div>
-          </div>
-        )}
+        <FileDropOverlay
+          isActive={dragActive}
+          label={t.dropHere}
+          onDrag={handleDrag}
+          onDrop={handleDrop}
+        />
 
         {/* Left Sidebar: Controls & Upload */}
         {/* Mobile Overlay */}
@@ -2886,717 +2669,131 @@ const App: React.FC = () => {
           <div style={{ width: isLargeScreen ? sidebarWidth : '100%' }}>
             <div className="p-4 space-y-8">
 
-              {/* Upload Area */}
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDragActive(true);
+              <SidebarUploadArea
+                inputRef={fileInputRef}
+                language={language}
+                clickDragLabel={t.clickDrag}
+                onDragActiveChange={setDragActive}
+                onFilesSelected={handleFileUpload}
+              />
+
+              <SidebarCanvasSettingsPanel
+                title={t.sections.canvas}
+                labels={{
+                  width: t.width,
+                  height: t.height,
+                  backgroundColor: t.backgroundColor,
+                  transparent: t.transparent,
+                  lockAspectRatio: t.lockAspectRatio,
+                  unlockAspectRatio: t.unlockAspectRatio,
                 }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDragActive(false);
-                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    handleFileUpload(e.dataTransfer.files);
-                  }
+                bgRemovalLabels={t.bgRemoval}
+                canvasConfig={canvasConfig}
+                exportFormat={exportFormat}
+                isAspectRatioLocked={isAspectRatioLocked}
+                isGifTransparentEnabled={isGifTransparentEnabled}
+                gifTransparentColor={gifTransparentColor}
+                isGifEyeDropperActive={isGifEyeDropperActive}
+                isBgColorEyeDropperActive={isBgColorEyeDropperActive}
+                onCanvasWidthChange={handleCanvasWidthChange}
+                onCanvasHeightChange={handleCanvasHeightChange}
+                onToggleAspectRatioLock={toggleAspectRatioLock}
+                onTransparentChange={handleTransparentChange}
+                onGifTransparentEnabledChange={setIsGifTransparentEnabled}
+                onGifTransparentColorChange={setGifTransparentColor}
+                onGifEyeDropperToggle={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
+                onBackgroundColorChange={handleBgColorChange}
+                onBackgroundEyeDropperToggle={() => setIsBgColorEyeDropperActive(!isBgColorEyeDropperActive)}
+              />
+
+              <SidebarExportSettingsPanel
+                title={t.sections.export}
+                language={language}
+                exportFormat={exportFormat}
+                outputLabels={t.outputControl}
+                targetSizeMB={targetSizeMB}
+                enableColorSmoothing={enableColorSmoothing}
+                enableGlobalPalette={enableGlobalPalette}
+                ditherMethod={ditherMethod}
+                ditherOptions={DITHER_OPTIONS}
+                isDitherMenuOpen={isDitherMenuOpen}
+                ditherMenuRef={ditherMenuRef}
+                webpLossless={webpLossless}
+                webpQuality={webpQuality}
+                onTargetSizeChange={setTargetSizeMB}
+                onColorSmoothingChange={setEnableColorSmoothing}
+                onGlobalPaletteChange={setEnableGlobalPalette}
+                onDitherMethodChange={setDitherMethod}
+                onDitherMenuOpenChange={setIsDitherMenuOpen}
+                onWebpLosslessChange={setWebpLossless}
+                onWebpQualityChange={setWebpQuality}
+              />
+
+              <SidebarBatchOperationsPanel
+                title={t.sections.batch}
+                labels={{
+                  setDuration: t.setDuration,
+                  apply: t.apply,
+                  autoFit: t.autoFit,
+                  fitFill: t.fitFill,
+                  fitContain: t.fitContain,
+                  applyFit: t.applyFit,
+                  alignCenter: t.alignCenter,
+                  mergeDuplicates: t.mergeDuplicates,
                 }}
-                className="border-2 border-dashed border-gray-700 hover:border-blue-500 hover:bg-gray-800/50 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group"
-              >
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv,.zip,application/zip"
-                  className="hidden"
-                  ref={fileInputRef}
-                  onChange={(e) => handleFileUpload(e.target.files)}
-                />
-                <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <ImagePlus className="text-gray-400 group-hover:text-blue-400" size={24} />
-                </div>
-                <p className="text-sm font-medium text-gray-300 text-center">{t.clickDrag}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {language === 'zh' ? '支持 PNG, JPG, WEBP, GIF, APNG, MP4, WebM, MOV, ZIP' : 'Supports PNG, JPG, WEBP, GIF, APNG, MP4, WebM, MOV, ZIP'}
-                </p>
-              </div>
+                reduceLabels={t.reduceFrames}
+                durationMode={durationMode}
+                globalDuration={globalDuration}
+                fpsValue={fpsValue}
+                fitMode={fitMode}
+                reduceKeep={reduceKeep}
+                reduceRemove={reduceRemove}
+                onDurationModeChange={setDurationMode}
+                onGlobalDurationChange={setGlobalDuration}
+                onFpsValueChange={setFpsValue}
+                onApplyDuration={updateGlobalDuration}
+                onFitModeChange={setFitMode}
+                onAutoFit={handleAutoFit}
+                onAlignCenterAll={() => handleAlignCenter('all')}
+                onMergeDuplicates={handleMergeDuplicates}
+                onSortByFilename={sortByFilename}
+                onReduceKeepChange={setReduceKeep}
+                onReduceRemoveChange={setReduceRemove}
+                onReduceFrames={handleReduceFrames}
+              />
 
-              {/* Section: Canvas Environment */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.canvas}</h3>
+              <SidebarImageProcessingPanel
+                title={t.sections.image}
+                labels={t.bgRemoval}
+                removeColor={removeColor}
+                tolerance={tolerance}
+                isEyeDropperActive={isEyeDropperActive}
+                selectedCount={selectedFrameIds.size}
+                onRemoveColorChange={setRemoveColor}
+                onToleranceChange={setTolerance}
+                onEyeDropperToggle={() => setIsEyeDropperActive(!isEyeDropperActive)}
+                onRemoveBackground={handleRemoveBackground}
+              />
 
-                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
-                  {/* Dimensions */}
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1">
-                      <label className="text-[10px] text-gray-500 mb-1 block uppercase">{t.width}</label>
-                      <input
-                        type="number"
-                        value={canvasConfig.width}
-                        onChange={(e) => handleCanvasWidthChange(parseInt(e.target.value))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none transition-colors"
-                      />
-                    </div>
-                    <button
-                      onClick={toggleAspectRatioLock}
-                      className={`p-2 rounded border transition-all shrink-0 mb-[1px] ${isAspectRatioLocked
-                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-                        }`}
-                      title={isAspectRatioLocked ? t.unlockAspectRatio : t.lockAspectRatio}
-                    >
-                      {isAspectRatioLocked ? <Lock size={14} /> : <Unlock size={14} />}
-                    </button>
-                    <div className="flex-1">
-                      <label className="text-[10px] text-gray-500 mb-1 block uppercase">{t.height}</label>
-                      <input
-                        type="number"
-                        value={canvasConfig.height}
-                        onChange={(e) => handleCanvasHeightChange(parseInt(e.target.value))}
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none transition-colors"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Background */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-gray-500 uppercase">{t.backgroundColor}</label>
-                      <Palette size={12} className="text-gray-600" />
-                    </div>
-
-                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 p-0.5">
-                      <button
-                        onClick={() => handleTransparentChange(true)}
-                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${canvasConfig.transparent === 'rgba(0,0,0,0)' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
-                      >
-                        {t.transparent}
-                      </button>
-                      <button
-                        onClick={() => handleTransparentChange(false)}
-                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${!canvasConfig.transparent ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
-                      >
-                        {t.backgroundColor}
-                      </button>
-                    </div>
-
-                    {canvasConfig.transparent ? (
-                      exportFormat === 'gif' ? (
-                        <div className="space-y-2 pt-1 px-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-gray-500">{t.bgRemoval.gifTransparent}</span>
-                            <div className="flex bg-gray-800 rounded border border-gray-700 p-0.5 scale-90 origin-right">
-                              <button
-                                onClick={() => setIsGifTransparentEnabled(false)}
-                                className={`px-2 py-0.5 text-[10px] rounded transition-colors ${!isGifTransparentEnabled ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                              >
-                                {t.bgRemoval.auto}
-                              </button>
-                              <button
-                                onClick={() => setIsGifTransparentEnabled(true)}
-                                className={`px-2 py-0.5 text-[10px] rounded transition-colors ${isGifTransparentEnabled ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                              >
-                                {t.bgRemoval.manual}
-                              </button>
-                            </div>
-                          </div>
-
-                          {isGifTransparentEnabled && (
-                            <div className="flex gap-2 items-center animate-in fade-in slide-in-from-top-1 duration-200">
-                              <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
-                                <div
-                                  className="w-4 h-4 rounded border border-gray-600 shadow-sm"
-                                  style={{ backgroundColor: gifTransparentColor }}
-                                />
-                                <input
-                                  type="text"
-                                  value={gifTransparentColor}
-                                  onChange={(e) => setGifTransparentColor(e.target.value)}
-                                  className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
-                                />
-                                <input
-                                  type="color"
-                                  value={gifTransparentColor}
-                                  onChange={(e) => setGifTransparentColor(e.target.value)}
-                                  className="w-6 h-6 opacity-0 absolute cursor-pointer"
-                                  title="Picker"
-                                />
-                              </div>
-                              <button
-                                onClick={() => setIsGifEyeDropperActive(!isGifEyeDropperActive)}
-                                className={`p-2 rounded border transition-colors ${isGifEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
-                                title={t.bgRemoval.eyeDropper}
-                              >
-                                <Pipette size={14} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : null
-                    ) : (
-                      <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
-                        <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 transition-colors hover:border-gray-600">
-                          <div
-                            className="w-4 h-4 rounded border border-gray-600 shadow-sm"
-                            style={{ backgroundColor: canvasConfig.backgroundColor || '#ffffff' }}
-                          />
-                          <input
-                            type="text"
-                            value={canvasConfig.backgroundColor || '#ffffff'}
-                            onChange={(e) => handleBgColorChange(e.target.value)}
-                            className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
-                          />
-                          <input
-                            type="color"
-                            value={canvasConfig.backgroundColor || '#ffffff'}
-                            onChange={(e) => handleBgColorChange(e.target.value)}
-                            className="w-6 h-6 opacity-0 absolute cursor-pointer"
-                          />
-                        </div>
-                        <button
-                          onClick={() => setIsBgColorEyeDropperActive(!isBgColorEyeDropperActive)}
-                          className={`p-2 rounded border transition-colors ${isBgColorEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
-                          title={t.bgRemoval.eyeDropper}
-                        >
-                          <Pipette size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Section: Export Settings */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.export}</h3>
-                {exportFormat === 'gif' ? (
-                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-400 font-medium">{t.outputControl.targetSize}:</span>
-                      <div className="flex-1 relative">
-                        <input
-                          type="number"
-                          placeholder={t.outputControl.unlimited}
-                          value={targetSizeMB}
-                          onChange={(e) => setTargetSizeMB(e.target.value)}
-                          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm min-w-0 focus:border-blue-500 focus:outline-none pr-8"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">MB</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">{t.outputControl.autoAdjust}</p>
-
-                    {/* Color Smoothing Toggle */}
-                    <div className="mt-4 pt-4 border-t border-gray-800">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="color-smoothing-toggle">
-                              {language === 'zh' ? '颜色平滑' : 'Color Smoothing'}
-                            </label>
-                            <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
-                              {language === 'zh'
-                                ? '自动识别并平滑相邻帧之间的相似颜色，减少播放时的色彩抖动'
-                                : 'Automatically smooth similar colors between frames to reduce color flickering'}
-                            </p>
-                          </div>
-                          <button
-                            id="color-smoothing-toggle"
-                            onClick={() => setEnableColorSmoothing(!enableColorSmoothing)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableColorSmoothing ? 'bg-blue-600' : 'bg-gray-700'
-                              }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableColorSmoothing ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                            />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 pr-3">
-                            <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="global-palette-toggle">
-                              {language === 'zh' ? '全局调色板' : 'Global Palette'}
-                            </label>
-                            <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
-                              {language === 'zh'
-                                ? '所有帧共用同一套调色板，减少同色在帧间跳色'
-                                : 'Use one palette across frames to reduce color shifts between frames'}
-                            </p>
-                          </div>
-                          <button
-                            id="global-palette-toggle"
-                            onClick={() => setEnableGlobalPalette(!enableGlobalPalette)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enableGlobalPalette ? 'bg-blue-600' : 'bg-gray-700'
-                              }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableGlobalPalette ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                            />
-                          </button>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-xs text-gray-400 font-medium" htmlFor="dither-method-button">
-                            {language === 'zh' ? '抖动策略' : 'Dithering'}
-                          </label>
-                          {(() => {
-                            const selectedDither = DITHER_OPTIONS.find(option => option.value === (ditherMethod || 'none')) || DITHER_OPTIONS[0];
-
-                            return (
-                              <div ref={ditherMenuRef} className="relative">
-                                <button
-                                  id="dither-method-button"
-                                  type="button"
-                                  onClick={() => setIsDitherMenuOpen(!isDitherMenuOpen)}
-                                  className={`w-full min-h-[48px] rounded border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${isDitherMenuOpen ? 'border-blue-500 bg-gray-800' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                                    }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <div className="text-xs font-medium text-gray-200 truncate">{selectedDither.label[language]}</div>
-                                      <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{selectedDither.description[language]}</div>
-                                    </div>
-                                    <ChevronDown
-                                      size={14}
-                                      className={`shrink-0 text-gray-500 transition-transform ${isDitherMenuOpen ? 'rotate-180' : ''}`}
-                                    />
-                                  </div>
-                                </button>
-
-                                {isDitherMenuOpen && (
-                                  <div className="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-xl shadow-black/40">
-                                    {DITHER_OPTIONS.map((option) => {
-                                      const isSelected = option.value === selectedDither.value;
-
-                                      return (
-                                        <button
-                                          key={option.value}
-                                          type="button"
-                                          onClick={() => {
-                                            setDitherMethod(option.value === 'none' ? false : option.value as CanvasConfig['dither']);
-                                            setIsDitherMenuOpen(false);
-                                          }}
-                                          className={`w-full px-3 py-2.5 text-left transition-colors ${isSelected ? 'bg-blue-600/20' : 'hover:bg-gray-800'
-                                            }`}
-                                        >
-                                          <div className="flex items-start gap-2">
-                                            <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
-                                              {isSelected && <Check size={13} className="text-blue-400" />}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                              <div className={`text-xs font-medium ${isSelected ? 'text-blue-200' : 'text-gray-200'}`}>
-                                                {option.label[language]}
-                                              </div>
-                                              <div className="mt-1 text-[10px] leading-relaxed text-gray-500">
-                                                {option.description[language]}
-                                              </div>
-                                              <div className="mt-1 grid gap-1 text-[10px] leading-relaxed sm:grid-cols-2">
-                                                <div className="rounded bg-emerald-950/30 px-2 py-1 text-emerald-300/90">
-                                                  <span className="font-medium">{language === 'zh' ? '优势：' : 'Pros: '}</span>
-                                                  {option.pros[language]}
-                                                </div>
-                                                <div className="rounded bg-amber-950/30 px-2 py-1 text-amber-300/90">
-                                                  <span className="font-medium">{language === 'zh' ? '代价：' : 'Cons: '}</span>
-                                                  {option.cons[language]}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                          <p className="text-[10px] text-gray-600 leading-relaxed">
-                            {language === 'zh'
-                              ? '统一选择一种策略会让所有帧使用同一抖动算法；不等于统一调色板，可与全局调色板一起使用。'
-                              : 'The selected method is applied to every frame. It is separate from Global Palette and can be used together.'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : exportFormat === 'webp' ? (
-                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
-                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 p-0.5">
-                      <button
-                        onClick={() => setWebpLossless(false)}
-                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${!webpLossless ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
-                      >
-                        {language === 'zh' ? '有损' : 'Lossy'}
-                      </button>
-                      <button
-                        onClick={() => setWebpLossless(true)}
-                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${webpLossless ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
-                      >
-                        {language === 'zh' ? '无损' : 'Lossless'}
-                      </button>
-                    </div>
-
-                    {!webpLossless ? (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-[10px] text-gray-500 font-medium">
-                          <span>{language === 'zh' ? '质量' : 'Quality'}</span>
-                          <span>{webpQuality}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="1"
-                          max="100"
-                          value={webpQuality}
-                          onChange={(e) => setWebpQuality(parseInt(e.target.value))}
-                          className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                        />
-                        <p className="text-[10px] text-gray-600 leading-relaxed">
-                          {language === 'zh'
-                            ? '质量越高颜色损失越少，但文件更大。默认 92% 适合多数动画。'
-                            : 'Higher quality reduces color loss but increases file size. The default 92% works well for most animations.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-400 leading-relaxed">
-                        {language === 'zh'
-                          ? '无损模式会尽量保留像素和透明通道，但编码更慢，文件通常更大。'
-                          : 'Lossless mode preserves pixels and alpha more faithfully, but encoding is slower and files are usually larger.'}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                      {language === 'zh'
-                        ? 'APNG 会保留完整颜色和 Alpha 透明度，不使用 GIF 的调色板、抖动、透明色键或目标大小压缩设置。'
-                        : 'APNG preserves full color and alpha, so GIF palette, dithering, transparency key, and target-size compression settings are hidden.'}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Section: Batch Operations */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.batch}</h3>
-
-                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
-                  {/* Duration */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-gray-500 uppercase block">{t.setDuration}</label>
-                      {/* Mode Toggle */}
-                      <div className="flex rounded-md border border-gray-700 bg-gray-800/50 overflow-hidden p-0.5">
-                        <button
-                          onClick={() => {
-                            setDurationMode('ms');
-                            // Sync FPS value when switching to ms mode
-                            setFpsValue(msToFps(globalDuration));
-                          }}
-                          className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'ms'
-                            ? 'bg-gray-700 text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-400'
-                            }`}
-                        >
-                          MS
-                        </button>
-                        <button
-                          onClick={() => {
-                            setDurationMode('fps');
-                            // Sync ms value when switching to fps mode
-                            setGlobalDuration(fpsToMs(fpsValue));
-                          }}
-                          className={`px-2 py-0.5 text-[9px] font-medium rounded transition-colors ${durationMode === 'fps'
-                            ? 'bg-gray-700 text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-400'
-                            }`}
-                        >
-                          FPS
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {durationMode === 'ms' ? (
-                        <div className="flex-1 relative">
-                          <input
-                            type="number"
-                            value={globalDuration}
-                            onChange={(e) => {
-                              const ms = parseInt(e.target.value) || 100;
-                              setGlobalDuration(ms);
-                              setFpsValue(msToFps(ms));
-                            }}
-                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm pr-8 focus:border-blue-500 focus:outline-none"
-                            min="10"
-                            step="10"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">ms</span>
-                        </div>
-                      ) : (
-                        <div className="flex-1 relative">
-                          <input
-                            type="number"
-                            value={fpsValue === 0 ? '' : fpsValue}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '') {
-                                setFpsValue(0); // Temporarily set to 0 when empty
-                              } else {
-                                const fps = parseInt(value) || 0;
-                                setFpsValue(fps);
-                                if (fps > 0) {
-                                  setGlobalDuration(fpsToMs(fps));
-                                }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              // Validate on blur - set to 10 if empty or invalid
-                              const value = e.target.value;
-                              if (value === '' || parseInt(value) <= 0) {
-                                setFpsValue(10);
-                                setGlobalDuration(fpsToMs(10));
-                              }
-                            }}
-                            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm pr-10 focus:border-blue-500 focus:outline-none"
-                            min="1"
-                            step="1"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">fps</span>
-                        </div>
-                      )}
-                      <button
-                        onClick={updateGlobalDuration}
-                        className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors"
-                      >
-                        {t.apply}
-                      </button>
-                    </div>
-                    {/* Show conversion hint */}
-                    <p className="text-[9px] text-gray-600">
-                      {durationMode === 'ms'
-                        ? `≈ ${msToFps(globalDuration)} fps`
-                        : fpsValue > 0
-                          ? `≈ ${fpsToMs(fpsValue)} ms`
-                          : '请输入 FPS 值'
-                      }
-                    </p>
-                  </div>
-
-                  <div className="w-full h-px bg-gray-800" />
-
-                  {/* Auto Fit */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-gray-500 uppercase">{t.autoFit}</label>
-                      <Scaling size={12} className="text-gray-600" />
-                    </div>
-                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 overflow-hidden p-0.5">
-                      <button
-                        onClick={() => setFitMode('fill')}
-                        className={`flex-1 py-1 text-[10px] font-medium rounded-md transition-colors ${fitMode === 'fill' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-400'}`}
-                      >
-                        {t.fitFill}
-                      </button>
-                      <button
-                        onClick={() => setFitMode('contain')}
-                        className={`flex-1 py-1 text-[10px] font-medium rounded-md transition-colors ${fitMode === 'contain' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-400'}`}
-                      >
-                        {t.fitContain}
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleAutoFit}
-                      className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1.5 text-gray-300"
-                    >
-                      <Maximize size={12} /> {t.applyFit}
-                    </button>
-                  </div>
-
-                  <div className="w-full h-px bg-gray-800" />
-
-                  {/* Positioning & Merge */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => handleAlignCenter('all')}
-                      className="py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex flex-col items-center justify-center gap-1.5 text-gray-300"
-                      title={t.alignCenter}
-                    >
-                      <AlignCenter size={14} />
-                      <span className="text-[10px]">{t.alignCenter}</span>
-                    </button>
-                    <button
-                      onClick={handleMergeDuplicates}
-                      className="py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex flex-col items-center justify-center gap-1.5 text-gray-300"
-                      title={t.mergeDuplicates}
-                    >
-                      <Merge size={14} />
-                      <span className="text-[10px]">{t.mergeDuplicates}</span>
-                    </button>
-                  </div>
-
-                  {/* Sorting */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => sortByFilename('asc')}
-                      className="py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs transition-colors flex items-center justify-center gap-1.5 text-gray-400 hover:text-gray-200"
-                    >
-                      <ArrowDownAZ size={14} />
-                      <span className="text-[10px] uppercase">A-Z</span>
-                    </button>
-                    <button
-                      onClick={() => sortByFilename('desc')}
-                      className="py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs transition-colors flex items-center justify-center gap-1.5 text-gray-400 hover:text-gray-200"
-                    >
-                      <ArrowUpAZ size={14} />
-                      <span className="text-[10px] uppercase">Z-A</span>
-                    </button>
-                  </div>
-
-                  <div className="w-full h-px bg-gray-800" />
-
-                  {/* Reduce Frames */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Scissors size={12} className="text-gray-500" />
-                      <label className="text-[10px] text-gray-500 uppercase">{t.reduceFrames.title}</label>
-                    </div>
-                    <div className="flex items-center justify-between gap-1 text-xs text-gray-400 bg-gray-800/50 p-1.5 rounded-lg border border-gray-700/50">
-                      <span className="text-[10px]">{t.reduceFrames.every}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={reduceKeep}
-                        onChange={(e) => setReduceKeep(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-10 bg-gray-900 border border-gray-600 rounded px-1 py-0.5 text-center text-xs"
-                      />
-                      <span className="text-[10px]">{t.reduceFrames.remove}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={reduceRemove}
-                        onChange={(e) => setReduceRemove(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-10 bg-gray-900 border border-gray-600 rounded px-1 py-0.5 text-center text-xs"
-                      />
-                    </div>
-                    <button
-                      onClick={handleReduceFrames}
-                      className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2 text-gray-300"
-                    >
-                      {t.reduceFrames.apply}
-                    </button>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* Section: Image Processing */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.image}</h3>
-                <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] text-gray-500 uppercase">{t.bgRemoval.title}</label>
-                    <Eraser size={12} className="text-gray-600" />
-                  </div>
-
-                  <div className="flex gap-2 items-center">
-                    <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5">
-                      <div
-                        className="w-4 h-4 rounded border border-gray-600 shadow-sm"
-                        style={{ backgroundColor: removeColor }}
-                      />
-                      <input
-                        type="text"
-                        value={removeColor}
-                        onChange={(e) => setRemoveColor(e.target.value)}
-                        className="flex-1 bg-transparent border-none text-xs focus:outline-none min-w-0 font-mono"
-                      />
-                      <input
-                        type="color"
-                        value={removeColor}
-                        onChange={(e) => setRemoveColor(e.target.value)}
-                        className="w-6 h-6 opacity-0 absolute cursor-pointer"
-                      />
-                    </div>
-                    <button
-                      onClick={() => setIsEyeDropperActive(!isEyeDropperActive)}
-                      className={`p-2 rounded border transition-colors ${isEyeDropperActive ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
-                      title={t.bgRemoval.eyeDropper}
-                    >
-                      <Pipette size={14} />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-gray-500 font-medium">
-                      <span>{t.bgRemoval.tolerance}</span>
-                      <span>{tolerance}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={tolerance}
-                      onChange={(e) => setTolerance(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleRemoveBackground}
-                    disabled={selectedFrameIds.size === 0}
-                    className="w-full py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700 rounded text-xs font-medium transition-colors flex items-center justify-center gap-2 text-gray-300"
-                  >
-                    <Eraser size={12} /> {t.bgRemoval.applySelected}
-                  </button>
-                </div>
-              </div>
-
-              {/* Section: Danger Zone */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">{t.sections.actions}</h3>
-                <button
-                  onClick={clearAll}
-                  className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-semibold transition-all shadow-sm ${clearFramesConfirm
-                    ? 'bg-red-600 text-white border-red-500 shadow-red-900/30'
-                    : 'bg-gray-900/50 hover:bg-red-900/10 text-red-400 border-gray-800 hover:border-red-900/30'
-                    }`}
-                >
-                  {clearFramesConfirm ? <AlertCircle size={14} /> : <Trash2 size={14} />}
-                  {clearFramesConfirm ? t.confirmAction : t.removeAll}
-                </button>
-              </div>
+              <SidebarDangerZone
+                title={t.sections.actions}
+                removeAllLabel={t.removeAll}
+                confirmLabel={t.confirmAction}
+                isConfirming={clearFramesConfirm}
+                onClearAll={clearAll}
+              />
 
               <div className="pt-2"></div>
 
 
-              {/* Author Info */}
-              <div className="pt-4 border-t border-gray-800 space-y-2">
-                {/* 鍒跺浘鍖犵綉绔欐寜閽?*/}
-                <a
-                  href="https://www.qwq.team"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full px-3 py-2 rounded-lg bg-gradient-to-r from-purple-600/20 to-blue-600/20 hover:from-purple-600/30 hover:to-blue-600/30 border border-purple-500/30 hover:border-purple-500/50 text-purple-400 hover:text-purple-300 text-xs font-medium transition-all flex items-center justify-center gap-2"
-                >
-                  <Monitor size={14} />
-                  {t.craftWebsite}
-                </a>
-
-                {/* GitHub鎸夐挳 */}
-                <button
-                  onClick={handleGithubLinkClick}
-                  className={`w-full px-3 py-2 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-2 ${githubLinkConfirm
-                    ? 'bg-blue-600 border-blue-500 text-white'
-                    : 'bg-gray-800/50 hover:bg-gray-800 border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-300'
-                    }`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                  </svg>
-                  {githubLinkConfirm ? t.confirmAction : t.githubRepo}
-                </button>
-
-                <p className="text-[10px] text-gray-600 px-2 text-center">{t.localProcessing}</p>
-              </div>
+              <SidebarFooterLinks
+                craftWebsiteLabel={t.craftWebsite}
+                githubRepoLabel={t.githubRepo}
+                confirmLabel={t.confirmAction}
+                localProcessingLabel={t.localProcessing}
+                githubLinkConfirm={githubLinkConfirm}
+                onGithubClick={handleGithubLinkClick}
+              />
             </div>
           </div>
         </aside>
@@ -3612,106 +2809,54 @@ const App: React.FC = () => {
         {/* Center: Split View (Canvas Editor + Frame List) */}
         <main className={`flex-1 flex flex-col min-w-0 min-h-0 bg-gray-950`}>
 
-          {/* Top: Canvas Editor */}
-          {(isLargeScreen ? showCanvasEditor : activeMobileTab === 'editor') && (
-            <div
-              style={{ height: isLargeScreen ? editorHeight : '100%' }}
-              className={`flex flex-col bg-gray-900/50 relative ${!isLargeScreen ? 'flex-1' : ''}`}
-            >
-              <div className="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layout size={16} className="text-blue-400" />
-                  <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">{t.canvasEditor}</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  {frames.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => setSyncPreviewSelection(!syncPreviewSelection)}
-                        className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${syncPreviewSelection
-                          ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                          : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
-                          }`}
-                        title={syncPreviewSelection ? t.unlinkSelection : t.linkSelection}
-                      >
-                        <ScanEye size={16} />
-                      </button>
-                      <button
-                        onClick={() => setIsPlaying(!isPlaying)}
-                        className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${isPlaying
-                          ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
-                          : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                          }`}
-                        title={isPlaying ? t.preview.pause : t.preview.play}
-                      >
-                        {isPlaying ? <div className="w-3 h-3 bg-current rounded-sm" /> : <Play size={12} fill="currentColor" />}
-                        {isPlaying ? t.preview.pause : t.preview.play}
-                      </button>
-                    </>
-                  )}
-                  {isLargeScreen && (
-                    <button
-                      onClick={() => setShowCanvasEditor(false)}
-                      className="text-gray-500 hover:text-white p-1"
-                      title={t.hideEditor}
-                    >
-                      <Minimize2 size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <CanvasEditor
-                frame={isPlaying && previewFrameIndex !== null ? frames[previewFrameIndex] : selectedFrame}
-                frameIndex={isPlaying && previewFrameIndex !== null ? previewFrameIndex : (selectedFrameIndex !== -1 ? selectedFrameIndex : undefined)}
-                config={canvasConfig}
-                onUpdate={handleCanvasUpdate}
-                labels={{ ...t.frame, frameInfo: t.frameInfo }}
-                emptyMessage={t.selectFrameToEdit}
-                isPreview={isPlaying}
-                isEyeDropperActive={isEyeDropperActive || isGifEyeDropperActive || isBgColorEyeDropperActive}
-                onColorPick={(color) => {
-                  if (isEyeDropperActive) {
-                    setRemoveColor(color);
-                    setIsEyeDropperActive(false);
-                  } else if (isGifEyeDropperActive) {
-                    setGifTransparentColor(color);
-                    setIsGifEyeDropperActive(false);
-                  } else if (isBgColorEyeDropperActive) {
-                    handleBgColorChange(color);
-                    setIsBgColorEyeDropperActive(false);
-                  }
-                }}
-                gifTransparentColor={gifTransparentColor}
-                isGifTransparentEnabled={isGifTransparentEnabled}
-              />
-              {/* Selection Indicator Overlay */}
-              {selectedFrameIds.size > 1 && (
-                <div className="absolute bottom-14 left-4 bg-blue-900/80 text-blue-200 px-3 py-1 rounded-full text-xs border border-blue-700 backdrop-blur-sm shadow-lg pointer-events-none">
-                  {t.selectedFrames.replace('{count}', selectedFrameIds.size.toString())} ({t.batchMode})
-                </div>
-              )}
-
-
-
-              {/* Timeline Preview */}
-              {frames.length > 0 && (
-                <>
-                  <Timeline
-                    frames={frames}
-                    selectedFrameIds={selectedFrameIds}
-                    onSelect={handleSelection}
-                    transparentColor={gifTransparentColor}
-                    isTransparentEnabled={isGifTransparentEnabled}
-                  />
-                  <GlobalFrameTimeline
-                    frames={frames}
-                    selectedFrameIds={selectedFrameIds}
-                    onSelectFrame={selectFrameByIndex}
-                  />
-                </>
-              )}
-            </div>
-          )}
+          <CanvasWorkspace
+            isVisible={isLargeScreen ? showCanvasEditor : activeMobileTab === 'editor'}
+            isLargeScreen={isLargeScreen}
+            editorHeight={editorHeight}
+            frames={frames}
+            selectedFrameIds={selectedFrameIds}
+            selectedFrame={selectedFrame}
+            selectedFrameIndex={selectedFrameIndex}
+            isPlaying={isPlaying}
+            previewFrameIndex={previewFrameIndex}
+            syncPreviewSelection={syncPreviewSelection}
+            config={canvasConfig}
+            gifTransparentColor={gifTransparentColor}
+            isGifTransparentEnabled={isGifTransparentEnabled}
+            isEyeDropperActive={isEyeDropperActive}
+            isGifEyeDropperActive={isGifEyeDropperActive}
+            isBgColorEyeDropperActive={isBgColorEyeDropperActive}
+            labels={{
+              canvasEditor: t.canvasEditor,
+              unlinkSelection: t.unlinkSelection,
+              linkSelection: t.linkSelection,
+              hideEditor: t.hideEditor,
+              selectFrameToEdit: t.selectFrameToEdit,
+              frameInfo: t.frameInfo,
+              selectedFrames: t.selectedFrames,
+              batchMode: t.batchMode,
+              frame: t.frame,
+              preview: t.preview,
+            }}
+            onSyncPreviewSelectionChange={setSyncPreviewSelection}
+            onPlayingChange={setIsPlaying}
+            onHideEditor={() => setShowCanvasEditor(false)}
+            onCanvasUpdate={handleCanvasUpdate}
+            onColorPick={(color) => {
+              if (isEyeDropperActive) {
+                setRemoveColor(color);
+                setIsEyeDropperActive(false);
+              } else if (isGifEyeDropperActive) {
+                setGifTransparentColor(color);
+                setIsGifEyeDropperActive(false);
+              } else if (isBgColorEyeDropperActive) {
+                handleBgColorChange(color);
+                setIsBgColorEyeDropperActive(false);
+              }
+            }}
+            onSelectFrame={handleSelection}
+            onSelectFrameByIndex={selectFrameByIndex}
+          />
 
           {/* Editor Resizer */}
           {isLargeScreen && showCanvasEditor && (
@@ -3728,177 +2873,41 @@ const App: React.FC = () => {
             onClick={handleBackgroundClick}
           >
             <div className="flex flex-col w-full h-full">
-              <div className="flex flex-col border-b border-gray-800 bg-gray-900/30">
-                <div className="flex items-center justify-between px-4 py-2 overflow-x-auto custom-scrollbar">
-                  <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-                    <h2 className="text-sm font-medium text-gray-300 whitespace-nowrap">
-                      {t.frames} <span className="text-gray-500">({frames.length})</span>
-                    </h2>
-
-                    <div className="h-4 w-px bg-gray-700 hidden sm:block"></div>
-
-                    {/* Frame Size Slider */}
-                    <div className="flex items-center gap-1 sm:gap-2 group">
-                      <ZoomOut size={14} className="text-gray-500 hidden sm:block" />
-                      <input
-                        type="range"
-                        min="60"
-                        max="300"
-                        value={frameSize}
-                        onChange={(e) => setFrameSize(parseInt(e.target.value))}
-                        className="w-16 sm:w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                        title={t.frameSize}
-                      />
-                      <ZoomIn size={14} className="text-gray-500 hidden sm:block" />
-                    </div>
-
-                    {/* Compact Mode Toggle */}
-                    <button
-                      onClick={() => setCompactMode(!compactMode)}
-                      className={`p-1.5 lg:px-2.5 rounded hover:bg-gray-800 transition-colors flex items-center gap-2 ${compactMode ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
-                      title={t.compactMode}
-                    >
-                      <Monitor size={16} />
-                      <span className="hidden lg:inline text-xs font-medium">{t.compactMode}</span>
-                    </button>
-
-                    {/* Layout Mode Toggle */}
-                    <button
-                      onClick={() => {
-                        const modes: ('auto' | 'vertical' | 'horizontal')[] = ['auto', 'vertical', 'horizontal'];
-                        const nextIndex = (modes.indexOf(layoutMode) + 1) % modes.length;
-                        setLayoutMode(modes[nextIndex]);
-                      }}
-                      className={`p-1.5 lg:px-2.5 rounded hover:bg-gray-800 transition-colors flex items-center gap-2 ${layoutMode !== 'auto' ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
-                      title={layoutMode === 'auto' ? t.layoutMode.auto : (layoutMode === 'vertical' ? t.layoutMode.vertical : t.layoutMode.horizontal)}
-                    >
-                      {layoutMode === 'auto' && <Layout size={16} />}
-                      {layoutMode === 'vertical' && <Rows size={16} />}
-                      {layoutMode === 'horizontal' && <Columns size={16} />}
-                      <span className="hidden lg:inline text-xs font-medium">
-                        {layoutMode === 'auto' ? t.layoutMode.auto : (layoutMode === 'vertical' ? t.layoutMode.vertical : t.layoutMode.horizontal)}
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => setIsBatchSelectMode(!isBatchSelectMode)}
-                      className={`p-1.5 lg:px-2.5 rounded transition-colors flex items-center gap-1.5 ${isBatchSelectMode
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-600 hover:bg-blue-900/30 hover:text-blue-400'
-                        }`}
-                      title={t.batchSelectMode}
-                    >
-                      <CheckSquare size={16} />
-                      <span className="hidden lg:inline text-xs font-medium">{t.batchSelectMode}</span>
-                    </button>
-
-                    <button
-                      onClick={() => setIsBatchEditOpen(!isBatchEditOpen)}
-                      disabled={selectedFrameIds.size === 0}
-                      className={`p-1.5 lg:px-2.5 rounded transition-colors flex items-center gap-1.5 ${isBatchEditOpen
-                        ? 'bg-blue-600 text-white'
-                        : selectedFrameIds.size > 0
-                          ? 'text-blue-400 hover:bg-blue-900/30'
-                          : 'text-gray-600 cursor-not-allowed'
-                        }`}
-                      title={t.selectionProperties}
-                    >
-                      <SlidersHorizontal size={16} />
-                      <span className="hidden lg:inline text-xs font-medium">{t.selectionProperties}</span>
-                      {selectedFrameIds.size > 0 && (
-                        <span className={`text-xs font-bold px-1.5 rounded-full ${isBatchEditOpen ? 'bg-white/20' : 'bg-blue-500/20'}`}>{selectedFrameIds.size}</span>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => setShowCanvasEditor(!showCanvasEditor)}
-                      className={`p-1.5 rounded hover:bg-gray-800 transition-colors hidden lg:block ${showCanvasEditor ? 'text-blue-400 bg-blue-900/20' : 'text-gray-500'}`}
-                      title={showCanvasEditor ? t.hideEditor : t.showEditor}
-                    >
-                      <Layout size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Collapsible Batch Edit Panel */}
-                {isBatchEditOpen && selectedFrameIds.size > 0 && (
-                  <div className="px-6 py-3 bg-blue-950/20 border-t border-blue-900/30 animate-in slide-in-from-top-2 duration-200">
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
-                      <div>
-                        <label className="text-xs text-blue-300/70 mb-1 block">{t.frame.x}</label>
-                        <input type="number"
-                          value={batchInputValues.x}
-                          placeholder="-"
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
-                          onChange={(e) => handleBatchInputChange('x', e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-blue-300/70 mb-1 block">{t.frame.y}</label>
-                        <input type="number"
-                          value={batchInputValues.y}
-                          placeholder="-"
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
-                          onChange={(e) => handleBatchInputChange('y', e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-blue-300/70 mb-1 block">{t.frame.w}</label>
-                        <input type="number"
-                          value={batchInputValues.width}
-                          placeholder="-"
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
-                          onChange={(e) => handleBatchInputChange('width', e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-blue-300/70 mb-1 block">{t.frame.h}</label>
-                        <input type="number"
-                          value={batchInputValues.height}
-                          placeholder="-"
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
-                          onChange={(e) => handleBatchInputChange('height', e.target.value)}
-                        />
-                      </div>
-                      <div className="col-span-2 md:col-span-1">
-                        <label className="text-xs text-blue-300/70 mb-1 block">{t.frame.time}</label>
-                        <input type="number"
-                          value={batchInputValues.duration}
-                          placeholder="-"
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
-                          onChange={(e) => handleBatchInputChange('duration', e.target.value)}
-                        />
-                      </div>
-
-                      <div className="col-span-2 md:col-span-1 flex gap-2">
-                        <button
-                          onClick={applyBatchUpdates}
-                          className="flex-1 flex items-center justify-center gap-1 p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs transition-colors shadow-sm font-medium h-[30px]"
-                          title={t.apply}
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          onClick={handleDuplicate}
-                          className="flex-1 flex items-center justify-center gap-1 p-1.5 rounded bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-900/50 text-xs transition-colors h-[30px]"
-                          title={t.duplicate}
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          onClick={handleResetFrameProperties}
-                          className="flex-1 flex items-center justify-center gap-1 p-1.5 rounded bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-900/50 text-xs transition-colors h-[30px]"
-                          title={t.resetProperties}
-                        >
-                          <RotateCcw size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <FrameListControls
+                frameCount={frames.length}
+                selectedCount={selectedFrameIds.size}
+                frameSize={frameSize}
+                compactMode={compactMode}
+                layoutMode={layoutMode}
+                isBatchSelectMode={isBatchSelectMode}
+                isBatchEditOpen={isBatchEditOpen}
+                showCanvasEditor={showCanvasEditor}
+                batchInputValues={batchInputValues}
+                labels={{
+                  frames: t.frames,
+                  frameSize: t.frameSize,
+                  compactMode: t.compactMode,
+                  batchSelectMode: t.batchSelectMode,
+                  selectionProperties: t.selectionProperties,
+                  showEditor: t.showEditor,
+                  hideEditor: t.hideEditor,
+                  apply: t.apply,
+                  duplicate: t.duplicate,
+                  resetProperties: t.resetProperties,
+                  frame: t.frame,
+                  layoutMode: t.layoutMode,
+                }}
+                onFrameSizeChange={setFrameSize}
+                onCompactModeChange={setCompactMode}
+                onLayoutModeChange={setLayoutMode}
+                onBatchSelectModeChange={setIsBatchSelectMode}
+                onBatchEditOpenChange={setIsBatchEditOpen}
+                onShowCanvasEditorChange={setShowCanvasEditor}
+                onBatchInputChange={handleBatchInputChange}
+                onApplyBatchUpdates={applyBatchUpdates}
+                onDuplicate={handleDuplicate}
+                onResetProperties={handleResetFrameProperties}
+              />
 
               {frames.length === 0 ? (
                 <div
@@ -4000,428 +3009,61 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile Bottom Tab Bar */}
-          {!isLargeScreen && (
-            <div className="bg-gray-900 border-t border-gray-800 shrink-0 z-30 pb-[env(safe-area-inset-bottom)] transition-all duration-200">
-              <div className="h-14 flex items-center justify-around">
-                <button
-                  onClick={() => setActiveMobileTab('frames')}
-                  className={`flex flex-col items-center justify-center w-full h-full gap-1 ${activeMobileTab === 'frames' ? 'text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
-                >
-                  <Layers size={20} />
-                  <span className="text-[10px]">{t.frames}</span>
-                </button>
-                <button
-                  onClick={() => setActiveMobileTab('editor')}
-                  className={`flex flex-col items-center justify-center w-full h-full gap-1 ${activeMobileTab === 'editor' ? 'text-blue-400' : 'text-gray-500 hover:text-gray-300'}`}
-                >
-                  <Layout size={20} />
-                  <span className="text-[10px]">{t.canvasEditor}</span>
-                </button>
-              </div>
-            </div>
-          )}
+          <MobileBottomTabBar
+            isLargeScreen={isLargeScreen}
+            activeTab={activeMobileTab}
+            labels={{ frames: t.frames, canvasEditor: t.canvasEditor }}
+            onTabChange={setActiveMobileTab}
+          />
 
           {/* Footer - Moved to Sidebar */}
         </main>
       </div>
 
-      {/* Context Menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-gray-900 border border-gray-700 shadow-xl rounded-lg py-1 w-48 overflow-hidden animate-in fade-in zoom-in-95 duration-100"
-          style={{
-            top: contextMenu.y > window.innerHeight - 450 ? 'auto' : contextMenu.y,
-            bottom: contextMenu.y > window.innerHeight - 450 ? window.innerHeight - contextMenu.y : 'auto',
-            left: Math.min(contextMenu.x, window.innerWidth - 200)
-          }}
-        >
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleContextCopy}
-          >
-            <ClipboardCopy size={14} />
-            {t.contextMenu.copy}
-          </button>
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
-            onClick={handleContextPaste}
-            disabled={clipboard.length === 0}
-          >
-            <ClipboardPaste size={14} />
-            {t.contextMenu.paste}
-          </button>
+      <FrameContextMenu
+        menu={contextMenu}
+        labels={t.contextMenu}
+        clipboardCount={clipboard.length}
+        tagColors={TAG_COLORS}
+        onCopy={handleContextCopy}
+        onPaste={handleContextPaste}
+        onDuplicate={handleContextDuplicate}
+        onInsert={handleContextInsert}
+        onAlignCenter={() => handleAlignCenter('selected')}
+        onFitContain={() => handleFitSelected('contain')}
+        onFitFill={() => handleFitSelected('fill')}
+        onResetProperties={handleResetFrameProperties}
+        onSetColorTag={handleSetColorTag}
+        onDownload={handleContextDownload}
+        onDelete={handleContextDelete}
+        onClose={() => setContextMenu(null)}
+      />
 
-          <div className="h-px bg-gray-700 my-1"></div>
+      <InsertFilesModal
+        isOpen={showInsertModal}
+        inputRef={insertFileInputRef}
+        labels={t.insertModal}
+        onClose={() => setShowInsertModal(false)}
+        onDrop={handleInsertDrop}
+        onFilesSelected={handleInsertFiles}
+      />
 
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleContextDuplicate}
-          >
-            <Copy size={14} />
-            {t.contextMenu.duplicateHere}
-          </button>
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleContextInsert}
-          >
-            <FilePlus size={14} />
-            {t.contextMenu.insertHere}
-          </button>
-
-          <div className="h-px bg-gray-700 my-1"></div>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={() => {
-              handleAlignCenter('selected');
-              setContextMenu(null);
-            }}
-          >
-            <AlignCenter size={14} />
-            {t.contextMenu.alignCenter}
-          </button>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={() => {
-              handleFitSelected('contain');
-              setContextMenu(null);
-            }}
-          >
-            <Scaling size={14} />
-            {t.contextMenu.fitCanvas}
-          </button>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={() => {
-              handleFitSelected('fill');
-              setContextMenu(null);
-            }}
-          >
-            <Maximize size={14} />
-            {t.contextMenu.fillCanvas}
-          </button>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleResetFrameProperties}
-          >
-            <RotateCcw size={14} />
-            {t.contextMenu.resetProperties}
-          </button>
-
-          <div className="h-px bg-gray-700 my-1"></div>
-
-          <div className="px-4 py-2">
-            <div className="text-xs text-gray-500 mb-2">{t.contextMenu.setColor}</div>
-            <div className="flex gap-1 flex-wrap">
-              <button
-                onClick={() => handleSetColorTag(undefined)}
-                className="w-4 h-4 rounded-full border border-gray-600 bg-transparent hover:border-white transition-colors relative"
-                title={t.contextMenu.noColor}
-              >
-                <div className="absolute inset-0.5 border-t border-red-500 transform rotate-45"></div>
-              </button>
-              {TAG_COLORS.map(color => (
-                <button
-                  key={color}
-                  onClick={() => handleSetColorTag(color)}
-                  className="w-4 h-4 rounded-full hover:scale-110 transition-transform border border-transparent hover:border-white"
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleContextDownload}
-          >
-            <Download size={14} />
-            {t.contextMenu.downloadSelected}
-          </button>
-
-          <div className="h-px bg-gray-700 my-1"></div>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-600 hover:text-white flex items-center gap-2 transition-colors"
-            onClick={handleContextDelete}
-          >
-            <Trash2 size={14} />
-            {t.contextMenu.deleteSelected}
-          </button>
-
-          <button
-            className="w-full text-left px-4 py-2 text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
-            onClick={() => setContextMenu(null)}
-          >
-            {t.contextMenu.cancel}
-          </button>
-        </div>
-      )}
-
-      {/* Insert Images Modal */}
-      {showInsertModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8">
-          <div className="bg-gray-900 rounded-xl shadow-2xl max-w-md w-full border border-gray-700 flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-850">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Plus size={18} className="text-blue-400" />
-                {t.insertModal.title}
-              </h3>
-              <button
-                onClick={() => setShowInsertModal(false)}
-                className="text-gray-500 hover:text-white p-1"
-              >
-                <XIcon size={18} />
-              </button>
-            </div>
-            <div className="p-6">
-              <div
-                onClick={() => insertFileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-700 hover:border-blue-500 hover:bg-gray-800/50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all group h-48"
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={handleInsertDrop}
-              >
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv,.zip,application/zip"
-                  className="hidden"
-                  ref={insertFileInputRef}
-                  onChange={(e) => handleInsertFiles(e.target.files)}
-                />
-                <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <ImagePlus className="text-gray-400 group-hover:text-blue-400" size={24} />
-                </div>
-                <p className="text-sm font-medium text-gray-300 text-center">{t.insertModal.dropText}</p>
-              </div>
-            </div>
-            <div className="p-4 border-t border-gray-800 bg-gray-850 flex justify-end">
-              <button
-                onClick={() => setShowInsertModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white text-sm"
-              >
-                {t.insertModal.cancel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Video Import Preview Modal */}
-      {pendingVideoImport && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onDragEnter={stopModalDrag}
-          onDragOver={stopModalDrag}
-          onDragLeave={stopModalDrag}
-          onDrop={stopModalDrag}
-        >
-          <div className="bg-gray-900 rounded-xl shadow-2xl max-w-3xl w-full border border-gray-700 overflow-hidden">
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900">
-              <h3 className="font-bold text-white flex items-center gap-2">
-                <Film size={18} className="text-blue-400" />
-                {language === 'zh' ? '视频导入设置' : 'Video Import Settings'}
-              </h3>
-              <button
-                onClick={closeVideoImportSettings}
-                disabled={isImportingVideo}
-                className="text-gray-500 hover:text-white p-1 disabled:opacity-40"
-              >
-                <XIcon size={18} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-5 max-h-[78vh] overflow-y-auto custom-scrollbar">
-              <div className="bg-black rounded-lg border border-gray-800 overflow-hidden">
-                <video
-                  ref={videoPreviewRef}
-                  src={pendingVideoImport.previewUrl}
-                  controls
-                  playsInline
-                  className="w-full max-h-[360px] bg-black"
-                  onTimeUpdate={(e) => setVideoPreviewTime(e.currentTarget.currentTime)}
-                  onLoadedMetadata={(e) => setVideoPreviewTime(e.currentTarget.currentTime)}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="relative h-2 rounded-full bg-gray-800 overflow-hidden border border-gray-700">
-                  <div
-                    className="absolute top-0 bottom-0 bg-blue-500/70"
-                    style={{
-                      left: `${Math.min(100, Math.max(0, (pendingVideoImport.settings.startTime / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`,
-                      width: `${Math.min(100, Math.max(0, ((pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime) / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`
-                    }}
-                  />
-                  <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-white"
-                    style={{
-                      left: `${Math.min(100, Math.max(0, (videoPreviewTime / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`
-                    }}
-                  />
-                </div>
-
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0.001, pendingVideoImport.metadata.duration)}
-                  step={0.01}
-                  value={Math.min(videoPreviewTime, pendingVideoImport.metadata.duration || 0)}
-                  disabled={isImportingVideo}
-                  onChange={(e) => seekVideoPreview(parseFloat(e.target.value) || 0)}
-                  className="w-full accent-blue-500"
-                />
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs text-gray-400">
-                    {language === 'zh' ? '当前位置' : 'Current'}: <span className="text-gray-100 font-semibold">{videoPreviewTime.toFixed(2)}s</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={setVideoImportInPoint}
-                      disabled={isImportingVideo}
-                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
-                    >
-                      {language === 'zh' ? '设为入点' : 'Set In'}
-                    </button>
-                    <button
-                      onClick={setVideoImportOutPoint}
-                      disabled={isImportingVideo}
-                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
-                    >
-                      {language === 'zh' ? '设为出点' : 'Set Out'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
-                  <div className="text-gray-500 mb-1">{language === 'zh' ? '尺寸' : 'Size'}</div>
-                  <div className="text-gray-200 font-semibold">{pendingVideoImport.metadata.width} x {pendingVideoImport.metadata.height}</div>
-                </div>
-                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
-                  <div className="text-gray-500 mb-1">{language === 'zh' ? '选择区间' : 'Range'}</div>
-                  <div className="text-gray-200 font-semibold">
-                    {Math.max(0, pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime).toFixed(2)}s
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
-                  <div className="text-gray-500 mb-1">{language === 'zh' ? '预计帧数' : 'Frames'}</div>
-                  <div className="text-gray-200 font-semibold">
-                    {Math.max(1, Math.ceil(Math.max(0, pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime) * pendingVideoImport.settings.fps))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-400 uppercase">FPS</label>
-                  <span className="text-xs text-gray-500">{pendingVideoImport.settings.fps}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={30}
-                  value={pendingVideoImport.settings.fps}
-                  disabled={isImportingVideo}
-                  onChange={(e) => updatePendingVideoSettings({ fps: parseInt(e.target.value, 10) })}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex justify-between text-[10px] text-gray-600">
-                  <span>1</span>
-                  <span>12</span>
-                  <span>30</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
-                    {language === 'zh' ? '入点' : 'In Point'}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={pendingVideoImport.metadata.duration || undefined}
-                    step={0.01}
-                    value={pendingVideoImport.settings.startTime}
-                    disabled={isImportingVideo}
-                    onChange={(e) => {
-                      const value = Math.max(0, parseFloat(e.target.value) || 0);
-                      updatePendingVideoSettings({ startTime: Math.min(value, Math.max(0, pendingVideoImport.settings.endTime - 0.01)) });
-                    }}
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
-                    {language === 'zh' ? '出点' : 'Out Point'}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={pendingVideoImport.metadata.duration || undefined}
-                    step={0.01}
-                    value={pendingVideoImport.settings.endTime}
-                    disabled={isImportingVideo}
-                    onChange={(e) => {
-                      const value = Math.max(0, parseFloat(e.target.value) || 0);
-                      updatePendingVideoSettings({
-                        endTime: Math.min(
-                          Math.max(value, pendingVideoImport.settings.startTime + 0.01),
-                          pendingVideoImport.metadata.duration || value
-                        )
-                      });
-                    }}
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
-                  {language === 'zh' ? '最大宽度' : 'Max Width'}
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={pendingVideoImport.settings.maxWidth}
-                  disabled={isImportingVideo}
-                  onChange={(e) => updatePendingVideoSettings({ maxWidth: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  {language === 'zh' ? '宽度超过该值会等比例缩小，降低内存占用和导出耗时。' : 'Videos wider than this will be scaled down to reduce memory and export time.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-gray-800 bg-gray-900 flex justify-end gap-3">
-              <button
-                onClick={closeVideoImportSettings}
-                disabled={isImportingVideo}
-                className="px-4 py-2 text-gray-400 hover:text-white text-sm disabled:opacity-40"
-              >
-                {t.close}
-              </button>
-              <button
-                onClick={handleConfirmVideoImport}
-                disabled={isImportingVideo}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
-              >
-                {isImportingVideo && <Loader2 size={16} className="animate-spin" />}
-                {language === 'zh' ? '开始导入' : 'Import Video'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <VideoImportModal
+        pendingVideoImport={pendingVideoImport}
+        language={language}
+        isImportingVideo={isImportingVideo}
+        videoPreviewRef={videoPreviewRef}
+        videoPreviewTime={videoPreviewTime}
+        onStopModalDrag={stopModalDrag}
+        onClose={closeVideoImportSettings}
+        onVideoPreviewTimeChange={setVideoPreviewTime}
+        onSeekVideoPreview={seekVideoPreview}
+        onSetInPoint={setVideoImportInPoint}
+        onSetOutPoint={setVideoImportOutPoint}
+        onUpdateSettings={updatePendingVideoSettings}
+        onConfirm={handleConfirmVideoImport}
+        closeLabel={t.close}
+      />
 
 
       {/* Generation Modal */}
@@ -4440,218 +3082,55 @@ const App: React.FC = () => {
         }}
       />
 
-      {/* History Snapshots Drawer */}
-      {showSnapshots && (
-        <div className="absolute top-16 right-0 bottom-0 w-80 bg-gray-900 border-l border-gray-800 z-30 shadow-2xl transform transition-transform p-4 overflow-y-auto custom-scrollbar flex flex-col">
-          <div className="flex justify-between items-center mb-4 shrink-0">
-            <h3 className="font-bold text-white">{t.historyTitle}</h3>
-            <button onClick={() => setShowSnapshots(false)} className="text-gray-500 hover:text-white"><XIcon size={24} /></button>
-          </div>
+      <HistorySnapshotsDrawer
+        isOpen={showSnapshots}
+        snapshots={snapshots}
+        language={language}
+        restoreConfirmId={restoreConfirmId}
+        clearHistoryConfirm={clearHistoryConfirm}
+        labels={{
+          historyTitle: t.historyTitle,
+          noRecords: t.noRecords,
+          download: t.download,
+          confirmAction: t.confirmAction,
+          restore: t.restore,
+          downloadZip: t.downloadZip,
+          clearHistory: t.clearHistory,
+        }}
+        onClose={() => setShowSnapshots(false)}
+        onDeleteSnapshot={deleteSnapshot}
+        onRestoreSnapshot={restoreSnapshot}
+        onExportZip={handleExportZip}
+        onClearHistory={clearHistoryRecords}
+      />
 
-          <div className="space-y-3 flex-1 overflow-y-auto pb-4">
-            {snapshots.length === 0 && <p className="text-gray-500 text-sm italic">{t.noRecords}</p>}
-            {snapshots.map(snap => (
-              <div key={snap.id} className="bg-gray-800 p-3 rounded border border-gray-700 hover:border-blue-500 transition-colors group">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-medium text-sm text-gray-200 truncate pr-2">{snap.name}</span>
-                  <button
-                    onClick={() => deleteSnapshot(snap.id)}
-                    className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+      <HistoryStackPanel
+        isOpen={showHistoryStack}
+        isPinned={isHistoryPinned}
+        historyStack={historyStack}
+        currentIndex={historyIndex}
+        labels={{
+          history: t.history,
+          noHistory: t.noHistory,
+          historyActions: t.historyActions,
+        }}
+        onClose={() => setShowHistoryStack(false)}
+        onPinnedChange={setIsHistoryPinned}
+        onJumpToHistory={jumpToHistory}
+      />
 
-                {/* Thumbnail */}
-                {snap.thumbnail ? (
-                  <div className="mb-2 w-full h-24 bg-gray-900 rounded overflow-hidden flex items-center justify-center border border-gray-800 relative group/thumb">
-                    <img src={snap.thumbnail} alt={snap.name} className="max-w-full max-h-full" />
-                    <a
-                      href={snap.thumbnail}
-                      download={`gif_builder_${snap.timestamp}.gif`}
-                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-all duration-200"
-                      title={t.download}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Download size={24} className="text-white drop-shadow-md transform scale-90 hover:scale-110 transition-transform" />
-                    </a>
-                  </div>
-                ) : (
-                  <div className="mb-2 w-full h-12 bg-gray-900 rounded border border-gray-800 flex items-center justify-center text-xs text-gray-500">
-                    ZIP Archive
-                  </div>
-                )}
+      <TransparentConfirmDialog
+        isOpen={showTransparentConfirm}
+        isClosing={dialogClosing}
+        labels={t.transparentConfirm}
+        onKeep={() => handleConfirmTransparentSwitch(false)}
+        onSwitch={() => handleConfirmTransparentSwitch(true)}
+      />
 
-                <div className="text-xs text-gray-500 mb-2">
-                  {new Date(snap.timestamp).toLocaleTimeString()} 鈥?{snap.frames.length} {t.frames}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => restoreSnapshot(snap)}
-                    className={`py-1.5 text-xs rounded transition-colors flex items-center justify-center gap-1 ${restoreConfirmId === snap.id
-                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      }`}
-                  >
-                    {restoreConfirmId === snap.id ? <Check size={12} /> : <Undo2 size={12} />}
-                    {restoreConfirmId === snap.id ? t.confirmAction : t.restore}
-                  </button>
-                  <button
-                    onClick={() => handleExportZip(snap.frames)}
-                    className="py-1.5 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors flex items-center justify-center gap-1"
-                    title={t.downloadZip}
-                  >
-                    <Package size={12} /> ZIP
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {snapshots.length > 0 && (
-            <div className="pt-4 border-t border-gray-800 shrink-0">
-              <button
-                onClick={clearHistoryRecords}
-                className={`w-full py-2 rounded text-xs transition-colors flex items-center justify-center gap-2 border ${clearHistoryConfirm ? 'bg-red-600 text-white border-red-500' : 'bg-transparent text-red-500 border-red-900/30 hover:bg-red-900/20'}`}
-              >
-                <Trash2 size={14} />
-                {clearHistoryConfirm ? t.confirmAction : t.clearHistory}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* History Stack Panel - Rendered at Root Level for Z-Index Safety */}
-      {showHistoryStack && (
-        <>
-          {/* Backdrop to close on click outside (only if not pinned) */}
-          {!isHistoryPinned && (
-            <div className="fixed inset-0 z-[90]" onClick={() => setShowHistoryStack(false)} />
-          )}
-
-          <div className="fixed top-16 right-2 sm:right-6 mt-2 w-72 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-xl shadow-2xl z-[100] flex flex-col max-h-[min(500px,80vh)] animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="p-3 border-b border-gray-800 font-medium text-sm text-gray-200 flex justify-between items-center bg-gray-900/50 rounded-t-xl">
-              <div className="flex items-center gap-2">
-                <History size={14} className="text-blue-400" />
-                <span>{t.history}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setIsHistoryPinned(!isHistoryPinned)}
-                  className={`p-1 rounded transition-colors ${isHistoryPinned ? 'text-blue-400 bg-blue-900/30' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}
-                  title={isHistoryPinned ? "Unpin" : "Pin"}
-                >
-                  {isHistoryPinned ? <PinOff size={14} /> : <Pin size={14} />}
-                </button>
-                <button onClick={() => setShowHistoryStack(false)} className="text-gray-500 hover:text-white p-1 hover:bg-gray-800 rounded transition-colors"><XIcon size={14} /></button>
-              </div>
-            </div>
-            <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
-              {historyStack.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-xs">{t.noHistory}</div>
-              ) : (
-                historyStack.map((item, idx) => {
-                  // Translate description
-                  const descKey = item.description as keyof typeof t.historyActions;
-                  const description = t.historyActions?.[descKey] || item.description;
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        jumpToHistory(idx);
-                        if (!isHistoryPinned) setShowHistoryStack(false);
-                      }}
-                      className={`w-full text-left px-3 py-2.5 mb-1 text-xs rounded-lg flex items-center gap-3 transition-all group ${idx === historyIndex
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
-                        : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
-                        } ${idx > historyIndex ? 'opacity-40 hover:opacity-100 grayscale' : ''}`}
-                    >
-                      <span className={`font-mono w-5 shrink-0 ${idx === historyIndex ? 'text-blue-200' : 'text-gray-600 group-hover:text-gray-500'}`}>
-                        {idx + 1}.
-                      </span>
-                      <span className="flex-1 truncate font-medium">{description}</span>
-                      <span className={`text-[10px] shrink-0 ${idx === historyIndex ? 'text-blue-200' : 'text-gray-600 group-hover:text-gray-500'}`}>
-                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-              {/* Future/Redo Indicator */}
-              <div ref={(el) => {
-                // Auto scroll to active item
-                if (el && showHistoryStack) {
-                  const activeBtn = el.parentElement?.children[historyIndex] as HTMLElement;
-                  if (activeBtn) {
-                    activeBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                  }
-                }
-              }} />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Transparent Background Confirmation Dialog */}
-      {showTransparentConfirm && (
-        <>
-          {/* Backdrop */}
-          <div className={`fixed inset-0 bg-black/50 z-[120] ${dialogClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-
-          {/* Dialog */}
-          <div className="fixed inset-0 z-[121] flex items-center justify-center p-4">
-            <div className={`fixed top-1/2 left-1/2 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-w-md w-full ${dialogClosing ? 'animate-scale-out' : 'animate-scale-in'}`}>
-              {/* Header */}
-              <div className="px-6 py-4 border-b border-gray-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                    <AlertCircle size={20} className="text-blue-400" />
-                  </div>
-                  <h3 className="text-base font-semibold text-gray-200">{t.transparentConfirm.title}</h3>
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="px-6 py-5">
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  {t.transparentConfirm.message}
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="px-6 pb-5 flex gap-3">
-                <button
-                  onClick={() => handleConfirmTransparentSwitch(false)}
-                  className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-750 text-gray-300 hover:text-white rounded-lg transition-all text-sm font-medium border border-gray-700 hover:border-gray-600"
-                >
-                  {t.transparentConfirm.keep}
-                </button>
-                <button
-                  onClick={() => handleConfirmTransparentSwitch(true)}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all text-sm font-medium"
-                >
-                  {t.transparentConfirm.switch}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Notification Toast */}
-      {notificationMessage && (
-        <div className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 z-[110] ${notificationClosing ? 'animate-slide-out-down' : 'animate-slide-in-up'}`}>
-          <div className="bg-gray-800 border border-gray-700 text-gray-200 px-5 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-md">
-            <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center shrink-0">
-              <AlertCircle size={16} className="text-blue-400" />
-            </div>
-            <span className="text-sm">{notificationMessage}</span>
-          </div>
-        </div>
-      )}
+      <NotificationToast
+        message={notificationMessage}
+        isClosing={notificationClosing}
+      />
     </div>
   );
 };

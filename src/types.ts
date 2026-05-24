@@ -1,3 +1,5 @@
+import type { VideoImportSettings, VideoMetadata } from './utils/videoHelper';
+
 export interface FrameData {
   id: string;
   file: File;
@@ -44,6 +46,21 @@ export interface HistorySnapshot {
   frames: FrameData[];
   canvasConfig: CanvasConfig;
   thumbnail?: string; // Optional generated GIF blob URL
+}
+
+export interface PendingVideoImport {
+  files: File[];
+  mode: 'append' | 'insert';
+  insertIndex: number | null;
+  metadata: VideoMetadata;
+  previewUrl: string;
+  settings: VideoImportSettings;
+}
+
+export interface FrameContextMenuState {
+  x: number;
+  y: number;
+  insertIndex: number;
 }
 
 // Minimal type definition for gif.js since we might not have the @types package installed
