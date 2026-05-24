@@ -12,6 +12,7 @@ import { FrameItem, FrameCard } from './components/FrameItem';
 import { CanvasEditor } from './components/CanvasEditor';
 import { Timeline } from './components/Timeline';
 import { VirtualFrameList, VirtualFrameListHandle } from './components/VirtualFrameList';
+import { GlobalFrameTimeline } from './components/GlobalFrameTimeline';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
@@ -169,7 +170,7 @@ const App: React.FC = () => {
 
   // Color Smoothing State
   const [enableColorSmoothing, setEnableColorSmoothing] = useState(false);
-  const [enableGlobalPalette, setEnableGlobalPalette] = useState(false);
+  const [enableGlobalPalette, setEnableGlobalPalette] = useState(true);
   const [ditherMethod, setDitherMethod] = useState<CanvasConfig['dither']>(false);
   const [isDitherMenuOpen, setIsDitherMenuOpen] = useState(false);
 
@@ -562,6 +563,21 @@ const App: React.FC = () => {
       return next;
     });
   };
+
+  const selectFrameByIndex = useCallback((index: number) => {
+    const frame = frames[index];
+    if (!frame) return;
+
+    lastSelectedIdRef.current = frame.id;
+    setSelectedFrameIds(prev => {
+      if (prev.size === 1 && prev.has(frame.id)) {
+        return prev;
+      }
+
+      return new Set([frame.id]);
+    });
+    setPreviewFrameIndex(index);
+  }, [frames]);
 
   // Copy to internal clipboard
   const handleCopy = useCallback(() => {
@@ -1078,7 +1094,23 @@ const App: React.FC = () => {
         }
       } else {
         // Non-modifier shortcuts
-        if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (e.key === '[' || e.key === ']') {
+          const taggedFrameIndexes = frames
+            .map((frame, index) => frame.colorTag ? index : -1)
+            .filter(index => index !== -1);
+
+          if (taggedFrameIndexes.length > 0) {
+            e.preventDefault();
+
+            const selectedIndex = frames.findIndex(frame => selectedFrameIds.has(frame.id));
+            const currentIndex = selectedIndex === -1 ? 0 : selectedIndex;
+            const targetIndex = e.key === ']'
+              ? (taggedFrameIndexes.find(index => index > currentIndex) ?? taggedFrameIndexes[0])
+              : ([...taggedFrameIndexes].reverse().find(index => index < currentIndex) ?? taggedFrameIndexes[taggedFrameIndexes.length - 1]);
+
+            selectFrameByIndex(targetIndex);
+          }
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
           if (selectedFrameIds.size > 0) {
             e.preventDefault();
             setAppState(prev => ({
@@ -1093,7 +1125,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, canRedo, undo, redo, handleDuplicate, handleCopy, handlePaste, frames]);
+  }, [canUndo, canRedo, undo, redo, handleDuplicate, handleCopy, handlePaste, frames, selectedFrameIds, selectFrameByIndex]);
 
 
   const handleFileUpload = async (files: FileList | null) => {
@@ -3184,13 +3216,20 @@ const App: React.FC = () => {
 
               {/* Timeline Preview */}
               {frames.length > 0 && (
-                <Timeline
-                  frames={frames}
-                  selectedFrameIds={selectedFrameIds}
-                  onSelect={handleSelection}
-                  transparentColor={gifTransparentColor}
-                  isTransparentEnabled={isGifTransparentEnabled}
-                />
+                <>
+                  <Timeline
+                    frames={frames}
+                    selectedFrameIds={selectedFrameIds}
+                    onSelect={handleSelection}
+                    transparentColor={gifTransparentColor}
+                    isTransparentEnabled={isGifTransparentEnabled}
+                  />
+                  <GlobalFrameTimeline
+                    frames={frames}
+                    selectedFrameIds={selectedFrameIds}
+                    onSelectFrame={selectFrameByIndex}
+                  />
+                </>
               )}
             </div>
           )}

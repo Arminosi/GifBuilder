@@ -31,7 +31,7 @@ export interface CanvasConfig {
   enableFrameDeduplication?: boolean; // Remove duplicate consecutive frames (default: true)
   enableAdaptivePalette?: boolean; // Use optimal palette size based on colors (default: true)
   enableColorSmoothing?: boolean; // Smooth colors between frames to reduce flickering (default: false)
-  enableGlobalPalette?: boolean; // Use one palette for all GIF frames (default: false)
+  enableGlobalPalette?: boolean; // Use one palette for all GIF frames (default: true)
   dither?: false | 'FloydSteinberg' | 'FloydSteinberg-serpentine' | 'FalseFloydSteinberg' | 'FalseFloydSteinberg-serpentine' | 'Stucki' | 'Stucki-serpentine' | 'Atkinson' | 'Atkinson-serpentine';
 }
 
