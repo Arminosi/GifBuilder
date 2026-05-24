@@ -33,6 +33,8 @@ export interface CanvasConfig {
   enableColorSmoothing?: boolean; // Smooth colors between frames to reduce flickering (default: false)
   enableGlobalPalette?: boolean; // Use one palette for all GIF frames (default: true)
   dither?: false | 'FloydSteinberg' | 'FloydSteinberg-serpentine' | 'FalseFloydSteinberg' | 'FalseFloydSteinberg-serpentine' | 'Stucki' | 'Stucki-serpentine' | 'Atkinson' | 'Atkinson-serpentine';
+  webpLossless?: boolean; // Use lossless WebP frame encoding (default: false)
+  webpQuality?: number; // 0-100 lossy WebP quality (default: 92)
 }
 
 export interface HistorySnapshot {

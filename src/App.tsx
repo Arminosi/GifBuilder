@@ -27,6 +27,7 @@ import {
 import { GenerationModal } from './components/GenerationModal';
 import { parseGifFrames } from './utils/gifParser';
 import { parseAPNGFrames } from './utils/apngParser';
+import { parseWebPFrames } from './utils/webpParser';
 
 // Initial states
 const INITIAL_CANVAS_CONFIG: CanvasConfig = {
@@ -146,7 +147,7 @@ const App: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
   const [generatedGif, setGeneratedGif] = useState<string | null>(null);
-  const [generatedFormat, setGeneratedFormat] = useState<'gif' | 'apng'>('gif');
+  const [generatedFormat, setGeneratedFormat] = useState<'gif' | 'apng' | 'webp'>('gif');
   const [dragActive, setDragActive] = useState(false);
   const [snapshots, setSnapshots] = useState<HistorySnapshot[]>([]);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -159,7 +160,9 @@ const App: React.FC = () => {
   const [fitMode, setFitMode] = useState<'fill' | 'contain'>('fill');
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [targetSizeMB, setTargetSizeMB] = useState<string>('');
-  const [exportFormat, setExportFormat] = useState<'gif' | 'apng'>('gif');
+  const [exportFormat, setExportFormat] = useState<'gif' | 'apng' | 'webp'>('gif');
+  const [webpLossless, setWebpLossless] = useState(false);
+  const [webpQuality, setWebpQuality] = useState(92);
 
   // Background Removal State
   const [removeColor, setRemoveColor] = useState<string>('#ffffff');
@@ -991,6 +994,7 @@ const App: React.FC = () => {
       if (!file.type.startsWith('image/')) continue;
 
       const isPngLike = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png') || file.name.toLowerCase().endsWith('.apng');
+      const isWebPLike = file.type === 'image/webp' || file.name.toLowerCase().endsWith('.webp');
 
       // Handle GIF files
       if (file.type === 'image/gif') {
@@ -1027,6 +1031,25 @@ const App: React.FC = () => {
           }
         } catch (e) {
           console.error("Failed to parse APNG frames, falling back to static image", e);
+        }
+      }
+
+      if (isWebPLike) {
+        try {
+          showLoadingNotification(t.importingImages.replace('{current}', '0').replace('{total}', '?'));
+          const webpFrames = await parseWebPFrames(file, (current, total) => {
+            showLoadingNotification(t.importingImages.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+
+          if (webpFrames.length > 0) {
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, webpFrames, /\.webp$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
+            continue;
+          }
+        } catch (e) {
+          console.error("Failed to parse WebP frames, falling back to static image", e);
         }
       }
 
@@ -1223,6 +1246,7 @@ const App: React.FC = () => {
       const file = allFiles[i];
       if (!file.type.startsWith('image/')) continue;
       const isPngLike = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png') || file.name.toLowerCase().endsWith('.apng');
+      const isWebPLike = file.type === 'image/webp' || file.name.toLowerCase().endsWith('.webp');
 
       // Handle GIF files
       if (file.type === 'image/gif') {
@@ -1276,6 +1300,26 @@ const App: React.FC = () => {
           }
         } catch (e) {
           console.error("Failed to parse APNG frames, falling back to static image", e);
+        }
+      }
+
+      if (isWebPLike) {
+        try {
+          showLoadingNotification(t.importingImages.replace('{current}', '0').replace('{total}', '?'));
+          const webpFrames = await parseWebPFrames(file, (current, total) => {
+            showLoadingNotification(t.importingImages.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+
+          if (webpFrames.length > 0) {
+            hasTransparency = true;
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, webpFrames, /\.webp$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
+            continue;
+          }
+        } catch (e) {
+          console.error("Failed to parse WebP frames, falling back to static image", e);
         }
       }
 
@@ -1925,13 +1969,21 @@ const App: React.FC = () => {
         ...canvasConfig,
         enableColorSmoothing,
         enableGlobalPalette,
-        dither: ditherMethod
+        dither: ditherMethod,
+        webpLossless,
+        webpQuality
       };
       const apngTexts = {
         ...t.generation,
         title: language === 'zh' ? '正在生成 APNG...' : 'Generating APNG...',
         initializing: language === 'zh' ? '正在初始化 APNG 编码器...' : 'Initializing APNG encoder...',
         rendering: language === 'zh' ? '正在渲染 APNG... {0}%' : 'Rendering APNG... {0}%'
+      };
+      const webpTexts = {
+        ...t.generation,
+        title: language === 'zh' ? '正在生成 WebP...' : 'Generating WebP...',
+        initializing: language === 'zh' ? '正在初始化 WebP 编码器...' : 'Initializing WebP encoder...',
+        rendering: language === 'zh' ? '正在渲染 WebP... {0}%' : 'Rendering WebP... {0}%'
       };
       const blob = exportFormat === 'apng'
         ? await generateAPNG(
@@ -1941,6 +1993,17 @@ const App: React.FC = () => {
           (status) => setProgressText(status),
           apngTexts
         )
+        : exportFormat === 'webp'
+          ? await (async () => {
+            const { generateWebP } = await import('./utils/webpHelper');
+            return generateWebP(
+              frames,
+              exportConfig,
+              (p) => setProgress(p * 100),
+              (status) => setProgressText(status),
+              webpTexts
+            );
+          })()
         : await generateGIF(
           frames,
           exportConfig,
@@ -2475,6 +2538,13 @@ const App: React.FC = () => {
               >
                 APNG
               </button>
+              <button
+                onClick={() => setExportFormat('webp')}
+                className={`px-2.5 text-xs font-semibold rounded transition-colors ${exportFormat === 'webp' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+              >
+                WebP
+              </button>
             </div>
 
             <button
@@ -2493,7 +2563,13 @@ const App: React.FC = () => {
               className="h-9 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20 transition-all tracking-wide"
             >
               {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
-              <span className="hidden sm:inline">{exportFormat === 'apng' ? (language === 'zh' ? '生成 APNG' : 'Generate APNG') : t.generate}</span>
+              <span className="hidden sm:inline">
+                {exportFormat === 'gif'
+                  ? t.generate
+                  : exportFormat === 'apng'
+                    ? (language === 'zh' ? '生成 APNG' : 'Generate APNG')
+                    : (language === 'zh' ? '生成 WebP' : 'Generate WebP')}
+              </span>
             </button>
           </div>
         </div>
@@ -2867,6 +2943,51 @@ const App: React.FC = () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                ) : exportFormat === 'webp' ? (
+                  <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800 space-y-4">
+                    <div className="flex rounded-lg border border-gray-700 bg-gray-800/50 p-0.5">
+                      <button
+                        onClick={() => setWebpLossless(false)}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${!webpLossless ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
+                      >
+                        {language === 'zh' ? '有损' : 'Lossy'}
+                      </button>
+                      <button
+                        onClick={() => setWebpLossless(true)}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${webpLossless ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-300'}`}
+                      >
+                        {language === 'zh' ? '无损' : 'Lossless'}
+                      </button>
+                    </div>
+
+                    {!webpLossless ? (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-[10px] text-gray-500 font-medium">
+                          <span>{language === 'zh' ? '质量' : 'Quality'}</span>
+                          <span>{webpQuality}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={webpQuality}
+                          onChange={(e) => setWebpQuality(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <p className="text-[10px] text-gray-600 leading-relaxed">
+                          {language === 'zh'
+                            ? '质量越高颜色损失越少，但文件更大。默认 92% 适合多数动画。'
+                            : 'Higher quality reduces color loss but increases file size. The default 92% works well for most animations.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        {language === 'zh'
+                          ? '无损模式会尽量保留像素和透明通道，但编码更慢，文件通常更大。'
+                          : 'Lossless mode preserves pixels and alpha more faithfully, but encoding is slower and files are usually larger.'}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-gray-900/50 p-3 rounded-xl border border-gray-800">
