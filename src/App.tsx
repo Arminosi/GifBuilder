@@ -26,6 +26,7 @@ import {
 } from './utils/storage';
 import { GenerationModal } from './components/GenerationModal';
 import { parseGifFrames } from './utils/gifParser';
+import { parseAPNGFrames } from './utils/apngParser';
 
 // Initial states
 const INITIAL_CANVAS_CONFIG: CanvasConfig = {
@@ -567,6 +568,40 @@ const App: React.FC = () => {
     });
   };
 
+  const addDecodedAnimationFrames = async (
+    targetFrames: FrameData[],
+    sourceFile: File,
+    decodedFrames: Array<{ url: string; delay: number; width: number; height: number }>,
+    extensionPattern: RegExp,
+    fallbackDuration: number,
+    dimensions: { width: number; height: number }
+  ) => {
+    for (let j = 0; j < decodedFrames.length; j++) {
+      const decodedFrame = decodedFrames[j];
+      if (targetFrames.length === 0 && dimensions.width === 0) {
+        dimensions.width = decodedFrame.width;
+        dimensions.height = decodedFrame.height;
+      }
+
+      const response = await fetch(decodedFrame.url);
+      const blob = await response.blob();
+      const frameFile = new File([blob], `${sourceFile.name.replace(extensionPattern, '')}_${j}.png`, { type: 'image/png' });
+
+      targetFrames.push({
+        id: Math.random().toString(36).substr(2, 9),
+        file: frameFile,
+        previewUrl: decodedFrame.url,
+        duration: decodedFrame.delay || fallbackDuration,
+        x: 0,
+        y: 0,
+        width: decodedFrame.width,
+        height: decodedFrame.height,
+        originalWidth: decodedFrame.width,
+        originalHeight: decodedFrame.height,
+      });
+    }
+  };
+
   const selectFrameByIndex = useCallback((index: number) => {
     const frame = frames[index];
     if (!frame) return;
@@ -955,6 +990,8 @@ const App: React.FC = () => {
       const file = allFiles[i];
       if (!file.type.startsWith('image/')) continue;
 
+      const isPngLike = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png') || file.name.toLowerCase().endsWith('.apng');
+
       // Handle GIF files
       if (file.type === 'image/gif') {
         try {
@@ -963,35 +1000,33 @@ const App: React.FC = () => {
             showLoadingNotification(t.importingGif.replace('{current}', current.toString()).replace('{total}', total.toString()));
           });
           if (gifFrames.length > 0) {
-            for (let j = 0; j < gifFrames.length; j++) {
-              const gifFrame = gifFrames[j];
-              if (newFrames.length === 0 && firstImageWidth === 0) {
-                firstImageWidth = gifFrame.width;
-                firstImageHeight = gifFrame.height;
-              }
-
-              // Convert blob URL to File object for storage
-              const response = await fetch(gifFrame.url);
-              const blob = await response.blob();
-              const frameFile = new File([blob], `${file.name.replace(/\.gif$/i, '')}_${j}.png`, { type: 'image/png' });
-
-              newFrames.push({
-                id: Math.random().toString(36).substr(2, 9),
-                file: frameFile,
-                previewUrl: gifFrame.url,
-                duration: gifFrame.delay || globalDuration,
-                x: 0,
-                y: 0,
-                width: gifFrame.width,
-                height: gifFrame.height,
-                originalWidth: gifFrame.width,
-                originalHeight: gifFrame.height,
-              });
-            }
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, gifFrames, /\.gif$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
             continue;
           }
         } catch (e) {
           console.error("Failed to parse GIF frames, falling back to static image", e);
+        }
+      }
+
+      if (isPngLike) {
+        try {
+          showLoadingNotification(t.importingImages.replace('{current}', '0').replace('{total}', '?'));
+          const apngFrames = await parseAPNGFrames(file, (current, total) => {
+            showLoadingNotification(t.importingImages.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+
+          if (apngFrames.length > 0) {
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, apngFrames, /\.(apng|png)$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
+            continue;
+          }
+        } catch (e) {
+          console.error("Failed to parse APNG frames, falling back to static image", e);
         }
       }
 
@@ -1187,6 +1222,7 @@ const App: React.FC = () => {
     for (let i = 0; i < allFiles.length; i++) {
       const file = allFiles[i];
       if (!file.type.startsWith('image/')) continue;
+      const isPngLike = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png') || file.name.toLowerCase().endsWith('.apng');
 
       // Handle GIF files
       if (file.type === 'image/gif') {
@@ -1212,35 +1248,34 @@ const App: React.FC = () => {
               }
             }
 
-            for (let j = 0; j < gifFrames.length; j++) {
-              const gifFrame = gifFrames[j];
-              if (newFrames.length === 0 && firstImageWidth === 0) {
-                firstImageWidth = gifFrame.width;
-                firstImageHeight = gifFrame.height;
-              }
-
-              // Convert blob URL to File object for storage
-              const response = await fetch(gifFrame.url);
-              const blob = await response.blob();
-              const frameFile = new File([blob], `${file.name.replace(/\.gif$/i, '')}_${j}.png`, { type: 'image/png' });
-
-              newFrames.push({
-                id: Math.random().toString(36).substr(2, 9),
-                file: frameFile, // Store individual frame file
-                previewUrl: gifFrame.url,
-                duration: gifFrame.delay || globalDuration,
-                x: 0,
-                y: 0,
-                width: gifFrame.width,
-                height: gifFrame.height,
-                originalWidth: gifFrame.width,
-                originalHeight: gifFrame.height,
-              });
-            }
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, gifFrames, /\.gif$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
             continue; // Skip standard image processing
           }
         } catch (e) {
           console.error("Failed to parse GIF frames, falling back to static image", e);
+        }
+      }
+
+      if (isPngLike) {
+        try {
+          showLoadingNotification(t.importingImages.replace('{current}', '0').replace('{total}', '?'));
+          const apngFrames = await parseAPNGFrames(file, (current, total) => {
+            showLoadingNotification(t.importingImages.replace('{current}', current.toString()).replace('{total}', total.toString()));
+          });
+
+          if (apngFrames.length > 0) {
+            hasTransparency = true;
+            const dimensions = { width: firstImageWidth, height: firstImageHeight };
+            await addDecodedAnimationFrames(newFrames, file, apngFrames, /\.(apng|png)$/i, globalDuration, dimensions);
+            firstImageWidth = dimensions.width;
+            firstImageHeight = dimensions.height;
+            continue;
+          }
+        } catch (e) {
+          console.error("Failed to parse APNG frames, falling back to static image", e);
         }
       }
 
