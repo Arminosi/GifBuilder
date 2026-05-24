@@ -491,8 +491,10 @@ export const generateGIF = async (
         // For custom transparent color, set it globally
         // For per-frame transparency, we don't set a global transparent color
         transparent: globalTransparentKey ? (globalTransparentKey.hex as any) : null,
-        background: currentConfig.transparent ? undefined : currentConfig.backgroundColor
-      });
+        background: currentConfig.transparent ? undefined : currentConfig.backgroundColor,
+        dither: currentConfig.dither || false,
+        globalPalette: currentConfig.enableGlobalPalette ? true : false
+      } as any);
 
       gif.on('progress', (p) => {
         const globalProgress = progressOffset + (p * progressScale);
