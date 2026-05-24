@@ -28,6 +28,7 @@ import { GenerationModal } from './components/GenerationModal';
 import { parseGifFrames } from './utils/gifParser';
 import { parseAPNGFrames } from './utils/apngParser';
 import { parseWebPFrames } from './utils/webpParser';
+import { extractVideoFrames, getVideoMetadata, VideoMetadata } from './utils/videoHelper';
 
 // Initial states
 const INITIAL_CANVAS_CONFIG: CanvasConfig = {
@@ -51,6 +52,20 @@ const TAG_COLORS = [
 
 type DitherOptionValue = Exclude<CanvasConfig['dither'], false> | 'none';
 
+interface PendingVideoImport {
+  files: File[];
+  mode: 'append' | 'insert';
+  insertIndex: number | null;
+  metadata: VideoMetadata;
+  previewUrl: string;
+  settings: {
+    fps: number;
+    startTime: number;
+    endTime: number;
+    maxWidth: number;
+  };
+}
+
 const DITHER_OPTIONS: Array<{
   value: DitherOptionValue;
   label: Record<Language, string>;
@@ -67,51 +82,51 @@ const DITHER_OPTIONS: Array<{
   },
   {
     value: 'FloydSteinberg',
-    label: { en: 'Floyd Steinberg', zh: '弗洛伊德-斯坦伯格' },
+    label: { en: 'Floyd Steinberg', zh: 'Floyd Steinberg' },
     description: { en: 'Classic error diffusion with strong gradient detail.', zh: '经典误差扩散算法，渐变细节保留较强。' },
     pros: { en: 'Good for photos and smooth gradients.', zh: '适合照片和柔和渐变。' },
     cons: { en: 'Can create animated grain between frames.', zh: '可能产生帧间颗粒跳动。' }
   },
   {
     value: 'FloydSteinberg-serpentine',
-    label: { en: 'Floyd Steinberg Serpentine', zh: '弗洛伊德-斯坦伯格 蛇形' },
+    label: { en: 'Floyd Steinberg Serpentine', zh: 'Floyd Steinberg 蛇形' },
     description: { en: 'Alternates scan direction to reduce directional texture.', zh: '交替扫描方向，降低固定方向纹理。' },
     pros: { en: 'More balanced texture than standard Floyd.', zh: '纹理比标准算法更均衡。' },
     cons: { en: 'Still may shimmer on motion.', zh: '运动画面仍可能闪烁。' }
   },
   {
     value: 'FalseFloydSteinberg',
-    label: { en: 'False Floyd Steinberg', zh: '简化弗洛伊德-斯坦伯格' },
+    label: { en: 'False Floyd Steinberg', zh: '简化 Floyd Steinberg' },
     description: { en: 'A lighter diffusion pattern with less processing.', zh: '更轻量的误差扩散模式。' },
     pros: { en: 'Faster, softer than full Floyd.', zh: '速度更快，颗粒感较轻。' },
     cons: { en: 'Less accurate on complex gradients.', zh: '复杂渐变还原较弱。' }
   },
   {
     value: 'Stucki',
-    label: { en: 'Stucki', zh: '斯塔基' },
+    label: { en: 'Stucki', zh: 'Stucki' },
     description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '把误差扩散到更大范围，色调过渡更平滑。' },
     pros: { en: 'Smooth gradients, richer perceived detail.', zh: '渐变更顺，感知细节更丰富。' },
     cons: { en: 'More visible texture and larger files.', zh: '纹理更明显，文件可能更大。' }
   },
   {
     value: 'Stucki-serpentine',
-    label: { en: 'Stucki Serpentine', zh: '斯塔基 蛇形' },
-    description: { en: 'Stucki with alternating scan direction.', zh: '蛇形扫描版本的斯塔基算法。' },
+    label: { en: 'Stucki Serpentine', zh: 'Stucki 蛇形' },
+    description: { en: 'Stucki with alternating scan direction.', zh: '蛇形扫描版本的 Stucki 算法。' },
     pros: { en: 'Smoother large gradients with less directional bias.', zh: '大面积渐变更顺，方向性更弱。' },
     cons: { en: 'Can be noisy in animation.', zh: '动画中可能出现较多噪点。' }
   },
   {
     value: 'Atkinson',
-    label: { en: 'Atkinson', zh: '阿特金森' },
+    label: { en: 'Atkinson', zh: 'Atkinson' },
     description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '较克制的扩散方式，观感清爽偏复古。' },
     pros: { en: 'Crisp edges, often less muddy.', zh: '边缘清晰，不容易发灰。' },
     cons: { en: 'May lose subtle shadow detail.', zh: '暗部和细微层次可能丢失。' }
   },
   {
     value: 'Atkinson-serpentine',
-    label: { en: 'Atkinson Serpentine', zh: '阿特金森 蛇形' },
-    description: { en: 'Atkinson with alternating scan direction.', zh: '蛇形扫描版本的阿特金森算法。' },
-    pros: { en: 'Crisp result with more even texture.', zh: '清晰且纹理更均匀。' },
+    label: { en: 'Atkinson Serpentine', zh: 'Atkinson 蛇形' },
+    description: { en: 'Atkinson with alternating scan direction.', zh: '蛇形扫描版本的 Atkinson 算法。' },
+    pros: { en: 'Crisp result with more even texture.', zh: '结果清晰且纹理更均匀。' },
     cons: { en: 'Less faithful for soft photos.', zh: '柔和照片的还原度较低。' }
   }
 ];
@@ -225,6 +240,11 @@ const App: React.FC = () => {
   // Insert Modal State
   const [showInsertModal, setShowInsertModal] = useState(false);
   const [insertTargetIndex, setInsertTargetIndex] = useState<number | null>(null);
+  const [pendingVideoImport, setPendingVideoImport] = useState<PendingVideoImport | null>(null);
+  const [isImportingVideo, setIsImportingVideo] = useState(false);
+  const [videoPreviewTime, setVideoPreviewTime] = useState(0);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const videoPreviewUrlRef = useRef<string | null>(null);
   const [showFooter, setShowFooter] = useState(true);
 
   // Canvas Aspect Ratio Lock
@@ -605,6 +625,233 @@ const App: React.FC = () => {
     }
   };
 
+  const isVideoFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogv)$/i.test(name);
+  };
+
+  const openVideoImportSettings = async (
+    files: File[],
+    mode: 'append' | 'insert',
+    insertIndex: number | null = null
+  ) => {
+    if (files.length === 0) return;
+
+    try {
+      showLoadingNotification(language === 'zh' ? '正在读取视频信息...' : 'Reading video info...');
+      const metadata = await getVideoMetadata(files[0]);
+      const endTime = Math.min(metadata.duration || 5, 5);
+      const previewUrl = URL.createObjectURL(files[0]);
+
+      if (videoPreviewUrlRef.current) {
+        URL.revokeObjectURL(videoPreviewUrlRef.current);
+      }
+      videoPreviewUrlRef.current = previewUrl;
+
+      setPendingVideoImport({
+        files,
+        mode,
+        insertIndex,
+        metadata,
+        previewUrl,
+        settings: {
+          fps: 12,
+          startTime: 0,
+          endTime: endTime > 0 ? endTime : 5,
+          maxWidth: Math.min(metadata.width || 500, 720),
+        },
+      });
+      setVideoPreviewTime(0);
+      hideNotification();
+    } catch (error) {
+      console.error('Failed to read video metadata', error);
+      showNotification(language === 'zh' ? '无法读取视频文件' : 'Unable to read video file');
+    }
+  };
+
+  const updatePendingVideoSettings = (updates: Partial<PendingVideoImport['settings']>) => {
+    setPendingVideoImport(prev => prev ? {
+      ...prev,
+      settings: {
+        ...prev.settings,
+        ...updates,
+      },
+    } : prev);
+  };
+
+  const closeVideoImportSettings = () => {
+    if (isImportingVideo) return;
+    if (videoPreviewUrlRef.current) {
+      URL.revokeObjectURL(videoPreviewUrlRef.current);
+      videoPreviewUrlRef.current = null;
+    }
+    setPendingVideoImport(null);
+    setVideoPreviewTime(0);
+  };
+
+  const seekVideoPreview = (time: number) => {
+    const video = videoPreviewRef.current;
+    const duration = pendingVideoImport?.metadata.duration || 0;
+    const nextTime = Math.max(0, Math.min(time, duration));
+
+    setVideoPreviewTime(nextTime);
+    if (video) {
+      video.currentTime = nextTime;
+    }
+  };
+
+  const setVideoImportInPoint = () => {
+    if (!pendingVideoImport) return;
+    const currentTime = videoPreviewRef.current?.currentTime ?? videoPreviewTime;
+    const startTime = Math.min(currentTime, Math.max(0, pendingVideoImport.settings.endTime - 0.1));
+    updatePendingVideoSettings({ startTime: Number(startTime.toFixed(3)) });
+  };
+
+  const setVideoImportOutPoint = () => {
+    if (!pendingVideoImport) return;
+    const currentTime = videoPreviewRef.current?.currentTime ?? videoPreviewTime;
+    const endTime = Math.max(currentTime, pendingVideoImport.settings.startTime + 0.1);
+    updatePendingVideoSettings({
+      endTime: Number(Math.min(endTime, pendingVideoImport.metadata.duration || endTime).toFixed(3))
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (videoPreviewUrlRef.current) {
+        URL.revokeObjectURL(videoPreviewUrlRef.current);
+        videoPreviewUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleConfirmVideoImport = async () => {
+    if (!pendingVideoImport || isImportingVideo) return;
+
+    const importConfig = pendingVideoImport;
+    const normalizedSettings = {
+      fps: Math.max(1, Math.min(60, Math.round(importConfig.settings.fps || 12))),
+      startTime: Math.max(0, importConfig.settings.startTime || 0),
+      endTime: Math.max(0, importConfig.settings.endTime || 0),
+      maxWidth: Math.max(0, Math.round(importConfig.settings.maxWidth || 0)),
+    };
+
+    if (normalizedSettings.endTime <= normalizedSettings.startTime) {
+      showNotification(language === 'zh' ? '结束时间需要大于开始时间' : 'End time must be after start time');
+      return;
+    }
+
+    setIsImportingVideo(true);
+
+    try {
+      const newFrames: FrameData[] = [];
+      let firstImageWidth = 0;
+      let firstImageHeight = 0;
+
+      for (let i = 0; i < importConfig.files.length; i++) {
+        const file = importConfig.files[i];
+        showLoadingNotification(language === 'zh' ? `正在导入视频 ${i + 1}/${importConfig.files.length}...` : `Importing video ${i + 1}/${importConfig.files.length}...`);
+
+        const videoFrames = await extractVideoFrames(file, normalizedSettings, (current, total) => {
+          showLoadingNotification(language === 'zh'
+            ? `正在抽帧 ${current}/${total}...`
+            : `Extracting frames ${current}/${total}...`);
+        });
+
+        const dimensions = { width: firstImageWidth, height: firstImageHeight };
+        await addDecodedAnimationFrames(newFrames, file, videoFrames, /\.(mp4|webm|mov|m4v|ogv)$/i, Math.round(1000 / normalizedSettings.fps), dimensions);
+        firstImageWidth = dimensions.width;
+        firstImageHeight = dimensions.height;
+      }
+
+      hideNotification();
+
+      if (newFrames.length === 0) {
+        showNotification(language === 'zh' ? '没有从视频中抽取到帧' : 'No frames were extracted from the video');
+        return;
+      }
+
+      if (importConfig.mode === 'insert' && importConfig.insertIndex !== null) {
+        const insertIndex = importConfig.insertIndex;
+        setAppState(prev => {
+          const nextFrames = [...prev.frames];
+          nextFrames.splice(insertIndex, 0, ...newFrames);
+          const shouldSetSize = prev.frames.length === 0;
+
+          return {
+            ...prev,
+            frames: nextFrames,
+            canvasConfig: shouldSetSize ? {
+              ...prev.canvasConfig,
+              width: firstImageWidth,
+              height: firstImageHeight,
+              transparent: null,
+            } : prev.canvasConfig,
+          };
+        }, 'addFrames');
+      } else {
+        setAppState(prev => {
+          const isFirstImport = prev.frames.length === 0;
+
+          if (isFirstImport) {
+            showNotification(t.autoDisableTransparent);
+            return {
+              ...prev,
+              frames: [...prev.frames, ...newFrames],
+              canvasConfig: {
+                ...prev.canvasConfig,
+                width: firstImageWidth,
+                height: firstImageHeight,
+                transparent: null,
+              },
+            };
+          }
+
+          const canvasWidth = prev.canvasConfig.width;
+          const canvasHeight = prev.canvasConfig.height;
+
+          const scaledFrames = newFrames.map(frame => {
+            const scaleX = canvasWidth / frame.originalWidth;
+            const scaleY = canvasHeight / frame.originalHeight;
+            const scale = Math.min(scaleX, scaleY);
+            const scaledWidth = Math.round(frame.originalWidth * scale);
+            const scaledHeight = Math.round(frame.originalHeight * scale);
+
+            return {
+              ...frame,
+              width: scaledWidth,
+              height: scaledHeight,
+              x: Math.round((canvasWidth - scaledWidth) / 2),
+              y: Math.round((canvasHeight - scaledHeight) / 2),
+            };
+          });
+
+          return {
+            ...prev,
+            frames: [...prev.frames, ...scaledFrames],
+          };
+        }, 'addFrames');
+      }
+
+      setSelectedFrameIds(new Set([newFrames[0].id]));
+      lastSelectedIdRef.current = newFrames[0].id;
+      if (videoPreviewUrlRef.current) {
+        URL.revokeObjectURL(videoPreviewUrlRef.current);
+        videoPreviewUrlRef.current = null;
+      }
+      setPendingVideoImport(null);
+      setVideoPreviewTime(0);
+      setShowInsertModal(false);
+      setInsertTargetIndex(null);
+    } catch (error) {
+      console.error('Failed to import video frames', error);
+      hideNotification();
+      showNotification(language === 'zh' ? '视频导入失败' : 'Failed to import video');
+    } finally {
+      setIsImportingVideo(false);
+    }
+  };
+
   const selectFrameByIndex = useCallback((index: number) => {
     const frame = frames[index];
     if (!frame) return;
@@ -941,6 +1188,13 @@ const App: React.FC = () => {
     if (!files || files.length === 0) return;
     if (insertTargetIndex === null) return;
 
+    const incomingFiles = Array.from(files);
+    const videoFiles = incomingFiles.filter(isVideoFile);
+    if (videoFiles.length > 0) {
+      await openVideoImportSettings(videoFiles, 'insert', insertTargetIndex);
+      return;
+    }
+
     const newFrames: FrameData[] = [];
     let firstImageWidth = 0;
     let firstImageHeight = 0;
@@ -1191,6 +1445,16 @@ const App: React.FC = () => {
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+
+    const incomingFiles = Array.from(files);
+    const videoFiles = incomingFiles.filter(isVideoFile);
+    if (videoFiles.length > 0) {
+      await openVideoImportSettings(videoFiles, 'append');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
 
     const newFrames: FrameData[] = [];
     let firstImageWidth = 0;
@@ -1445,8 +1709,11 @@ const App: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Disable global drag overlay if modal is open to prevent conflict
-    if (showInsertModal) return;
+    // Disable global drag overlay if a modal is open to prevent conflicts with sliders/previews.
+    if (showInsertModal || pendingVideoImport) {
+      setDragActive(false);
+      return;
+    }
 
     if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
@@ -1461,6 +1728,12 @@ const App: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleInsertFiles(e.dataTransfer.files);
     }
+  };
+
+  const stopModalDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -2634,7 +2907,7 @@ const App: React.FC = () => {
                 <input
                   type="file"
                   multiple
-                  accept="image/*,.zip,application/zip"
+                  accept="image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv,.zip,application/zip"
                   className="hidden"
                   ref={fileInputRef}
                   onChange={(e) => handleFileUpload(e.target.files)}
@@ -2643,7 +2916,9 @@ const App: React.FC = () => {
                   <ImagePlus className="text-gray-400 group-hover:text-blue-400" size={24} />
                 </div>
                 <p className="text-sm font-medium text-gray-300 text-center">{t.clickDrag}</p>
-                <p className="text-xs text-gray-500 mt-1">{t.supports}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {language === 'zh' ? '支持 PNG, JPG, WEBP, GIF, APNG, MP4, WebM, MOV, ZIP' : 'Supports PNG, JPG, WEBP, GIF, APNG, MP4, WebM, MOV, ZIP'}
+                </p>
               </div>
 
               {/* Section: Canvas Environment */}
@@ -2844,7 +3119,7 @@ const App: React.FC = () => {
                             </label>
                             <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
                               {language === 'zh'
-                                ? '所有帧共用第一帧生成的调色板，减少同色在帧间跳色'
+                                ? '所有帧共用同一套调色板，减少同色在帧间跳色'
                                 : 'Use one palette across frames to reduce color shifts between frames'}
                             </p>
                           </div>
@@ -3295,7 +3570,7 @@ const App: React.FC = () => {
 
               {/* Author Info */}
               <div className="pt-4 border-t border-gray-800 space-y-2">
-                {/* 制图匠网站按钮 */}
+                {/* 鍒跺浘鍖犵綉绔欐寜閽?*/}
                 <a
                   href="https://www.qwq.team"
                   target="_blank"
@@ -3306,7 +3581,7 @@ const App: React.FC = () => {
                   {t.craftWebsite}
                 </a>
 
-                {/* GitHub按钮 */}
+                {/* GitHub鎸夐挳 */}
                 <button
                   onClick={handleGithubLinkClick}
                   className={`w-full px-3 py-2 rounded-lg border text-xs font-medium transition-all flex items-center justify-center gap-2 ${githubLinkConfirm
@@ -3913,7 +4188,7 @@ const App: React.FC = () => {
                 <input
                   type="file"
                   multiple
-                  accept="image/*,.zip,application/zip"
+                  accept="image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv,.zip,application/zip"
                   className="hidden"
                   ref={insertFileInputRef}
                   onChange={(e) => handleInsertFiles(e.target.files)}
@@ -3935,6 +4210,219 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Video Import Preview Modal */}
+      {pendingVideoImport && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onDragEnter={stopModalDrag}
+          onDragOver={stopModalDrag}
+          onDragLeave={stopModalDrag}
+          onDrop={stopModalDrag}
+        >
+          <div className="bg-gray-900 rounded-xl shadow-2xl max-w-3xl w-full border border-gray-700 overflow-hidden">
+            <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900">
+              <h3 className="font-bold text-white flex items-center gap-2">
+                <Film size={18} className="text-blue-400" />
+                {language === 'zh' ? '视频导入设置' : 'Video Import Settings'}
+              </h3>
+              <button
+                onClick={closeVideoImportSettings}
+                disabled={isImportingVideo}
+                className="text-gray-500 hover:text-white p-1 disabled:opacity-40"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5 max-h-[78vh] overflow-y-auto custom-scrollbar">
+              <div className="bg-black rounded-lg border border-gray-800 overflow-hidden">
+                <video
+                  ref={videoPreviewRef}
+                  src={pendingVideoImport.previewUrl}
+                  controls
+                  playsInline
+                  className="w-full max-h-[360px] bg-black"
+                  onTimeUpdate={(e) => setVideoPreviewTime(e.currentTarget.currentTime)}
+                  onLoadedMetadata={(e) => setVideoPreviewTime(e.currentTarget.currentTime)}
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="relative h-2 rounded-full bg-gray-800 overflow-hidden border border-gray-700">
+                  <div
+                    className="absolute top-0 bottom-0 bg-blue-500/70"
+                    style={{
+                      left: `${Math.min(100, Math.max(0, (pendingVideoImport.settings.startTime / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`,
+                      width: `${Math.min(100, Math.max(0, ((pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime) / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`
+                    }}
+                  />
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-white"
+                    style={{
+                      left: `${Math.min(100, Math.max(0, (videoPreviewTime / Math.max(0.001, pendingVideoImport.metadata.duration)) * 100))}%`
+                    }}
+                  />
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0.001, pendingVideoImport.metadata.duration)}
+                  step={0.01}
+                  value={Math.min(videoPreviewTime, pendingVideoImport.metadata.duration || 0)}
+                  disabled={isImportingVideo}
+                  onChange={(e) => seekVideoPreview(parseFloat(e.target.value) || 0)}
+                  className="w-full accent-blue-500"
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-gray-400">
+                    {language === 'zh' ? '当前位置' : 'Current'}: <span className="text-gray-100 font-semibold">{videoPreviewTime.toFixed(2)}s</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={setVideoImportInPoint}
+                      disabled={isImportingVideo}
+                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
+                    >
+                      {language === 'zh' ? '设为入点' : 'Set In'}
+                    </button>
+                    <button
+                      onClick={setVideoImportOutPoint}
+                      disabled={isImportingVideo}
+                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
+                    >
+                      {language === 'zh' ? '设为出点' : 'Set Out'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+                  <div className="text-gray-500 mb-1">{language === 'zh' ? '尺寸' : 'Size'}</div>
+                  <div className="text-gray-200 font-semibold">{pendingVideoImport.metadata.width} x {pendingVideoImport.metadata.height}</div>
+                </div>
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+                  <div className="text-gray-500 mb-1">{language === 'zh' ? '选择区间' : 'Range'}</div>
+                  <div className="text-gray-200 font-semibold">
+                    {Math.max(0, pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime).toFixed(2)}s
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
+                  <div className="text-gray-500 mb-1">{language === 'zh' ? '预计帧数' : 'Frames'}</div>
+                  <div className="text-gray-200 font-semibold">
+                    {Math.max(1, Math.ceil(Math.max(0, pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime) * pendingVideoImport.settings.fps))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-400 uppercase">FPS</label>
+                  <span className="text-xs text-gray-500">{pendingVideoImport.settings.fps}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={30}
+                  value={pendingVideoImport.settings.fps}
+                  disabled={isImportingVideo}
+                  onChange={(e) => updatePendingVideoSettings({ fps: parseInt(e.target.value, 10) })}
+                  className="w-full accent-blue-500"
+                />
+                <div className="flex justify-between text-[10px] text-gray-600">
+                  <span>1</span>
+                  <span>12</span>
+                  <span>30</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
+                    {language === 'zh' ? '入点' : 'In Point'}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={pendingVideoImport.metadata.duration || undefined}
+                    step={0.01}
+                    value={pendingVideoImport.settings.startTime}
+                    disabled={isImportingVideo}
+                    onChange={(e) => {
+                      const value = Math.max(0, parseFloat(e.target.value) || 0);
+                      updatePendingVideoSettings({ startTime: Math.min(value, Math.max(0, pendingVideoImport.settings.endTime - 0.01)) });
+                    }}
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
+                    {language === 'zh' ? '出点' : 'Out Point'}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={pendingVideoImport.metadata.duration || undefined}
+                    step={0.01}
+                    value={pendingVideoImport.settings.endTime}
+                    disabled={isImportingVideo}
+                    onChange={(e) => {
+                      const value = Math.max(0, parseFloat(e.target.value) || 0);
+                      updatePendingVideoSettings({
+                        endTime: Math.min(
+                          Math.max(value, pendingVideoImport.settings.startTime + 0.01),
+                          pendingVideoImport.metadata.duration || value
+                        )
+                      });
+                    }}
+                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase block mb-1">
+                  {language === 'zh' ? '最大宽度' : 'Max Width'}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={pendingVideoImport.settings.maxWidth}
+                  disabled={isImportingVideo}
+                  onChange={(e) => updatePendingVideoSettings({ maxWidth: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  {language === 'zh' ? '宽度超过该值会等比例缩小，降低内存占用和导出耗时。' : 'Videos wider than this will be scaled down to reduce memory and export time.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-800 bg-gray-900 flex justify-end gap-3">
+              <button
+                onClick={closeVideoImportSettings}
+                disabled={isImportingVideo}
+                className="px-4 py-2 text-gray-400 hover:text-white text-sm disabled:opacity-40"
+              >
+                {t.close}
+              </button>
+              <button
+                onClick={handleConfirmVideoImport}
+                disabled={isImportingVideo}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
+              >
+                {isImportingVideo && <Loader2 size={16} className="animate-spin" />}
+                {language === 'zh' ? '开始导入' : 'Import Video'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Generation Modal */}
       <GenerationModal
@@ -3995,7 +4483,7 @@ const App: React.FC = () => {
                 )}
 
                 <div className="text-xs text-gray-500 mb-2">
-                  {new Date(snap.timestamp).toLocaleTimeString()} • {snap.frames.length} {t.frames}
+                  {new Date(snap.timestamp).toLocaleTimeString()} 鈥?{snap.frames.length} {t.frames}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
