@@ -45,7 +45,8 @@ export interface HistorySnapshot {
   name: string;
   frames: FrameData[];
   canvasConfig: CanvasConfig;
-  thumbnail?: string; // Optional generated GIF blob URL
+  thumbnail?: string; // Optional generated animation blob URL
+  format?: 'gif' | 'apng' | 'webp';
 }
 
 export interface PendingVideoImport {

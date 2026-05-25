@@ -7,6 +7,7 @@ import {
   Download,
   FilePlus,
   Maximize,
+  ArrowDownUp,
   RotateCcw,
   Scaling,
   Trash2,
@@ -23,6 +24,7 @@ interface FrameContextMenuProps {
   onPaste: () => void;
   onDuplicate: () => void;
   onInsert: () => void;
+  onReverseSelected: () => void;
   onAlignCenter: () => void;
   onFitContain: () => void;
   onFitFill: () => void;
@@ -44,6 +46,7 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
   onPaste,
   onDuplicate,
   onInsert,
+  onReverseSelected,
   onAlignCenter,
   onFitContain,
   onFitFill,
@@ -95,6 +98,13 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
       >
         <FilePlus size={14} />
         {labels.insertHere}
+      </button>
+      <button
+        className={menuButtonClass}
+        onClick={onReverseSelected}
+      >
+        <ArrowDownUp size={14} />
+        {labels.reverseSelected}
       </button>
 
       <div className="h-px bg-gray-700 my-1"></div>

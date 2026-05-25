@@ -27,12 +27,23 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const downloadLabel = format === 'apng'
+    ? t.download.replace(/GIF/gi, 'APNG')
+    : format === 'webp'
+      ? t.download.replace(/GIF/gi, 'WebP')
+      : t.download;
+  const titleLabel = format === 'apng'
+    ? t.title.replace(/GIF/gi, 'APNG')
+    : format === 'webp'
+      ? t.title.replace(/GIF/gi, 'WebP')
+      : t.title;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
           <h3 className="text-lg font-semibold text-white">
-            {!generatedGif ? t.title : t.resultTitle}
+            {!generatedGif ? titleLabel : t.resultTitle}
           </h3>
           {generatedGif && (
             <button
@@ -95,7 +106,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
               download={`animation-${Date.now()}.${format === 'apng' ? 'png' : format}`}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20 flex items-center gap-2"
             >
-              {t.download}
+              {downloadLabel}
             </a>
           </div>
         )}

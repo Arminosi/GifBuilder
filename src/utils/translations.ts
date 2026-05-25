@@ -88,6 +88,7 @@ export interface TranslationSchema {
     paste: string;
     duplicateHere: string;
     insertHere: string;
+    reverseSelected: string;
     resetProperties: string;
     alignCenter: string;
     fitCanvas: string;
@@ -178,6 +179,12 @@ export interface TranslationSchema {
   githubRepo: string;
   lockAspectRatio: string;
   unlockAspectRatio: string;
+  scaleExistingFrames: string;
+  scaleExistingFramesHint: string;
+  autoCropCanvas: string;
+  autoCropCanvasHint: string;
+  autoCropCanvasSuccess: string;
+  autoCropCanvasEmpty: string;
   reduceFrames: {
     title: string;
     every: string;
@@ -285,6 +292,7 @@ export const translations: Record<Language, TranslationSchema> = {
       paste: "Paste (Ctrl+V)",
       duplicateHere: "Duplicate Selected Here",
       insertHere: "Insert Images Here",
+      reverseSelected: "Reverse Selected Frames",
       resetProperties: "Reset Properties",
       alignCenter: "Align Center",
       fitCanvas: "Fit Canvas (Keep Ratio)",
@@ -373,6 +381,12 @@ export const translations: Record<Language, TranslationSchema> = {
     githubRepo: "View on GitHub",
     lockAspectRatio: "Lock Aspect Ratio",
     unlockAspectRatio: "Unlock Aspect Ratio",
+    scaleExistingFrames: "Resize Existing Frames",
+    scaleExistingFramesHint: "When enabled, changing canvas resolution also scales existing frames.",
+    autoCropCanvas: "Auto Crop Canvas",
+    autoCropCanvasHint: "Detect visible pixels across all frames and crop the canvas to the smallest shared bounds.",
+    autoCropCanvasSuccess: "Canvas cropped to visible frame pixels",
+    autoCropCanvasEmpty: "No visible frame pixels detected",
     reduceFrames: {
       title: "Reduce Frames",
       every: "Every",
@@ -476,6 +490,7 @@ export const translations: Record<Language, TranslationSchema> = {
       paste: "粘贴 (Ctrl+V)",
       duplicateHere: "复制选中帧到此处",
       insertHere: "插入图片到此处",
+      reverseSelected: "选中帧反向排序",
       resetProperties: "重置选中帧属性",
       alignCenter: "居中对齐",
       fitCanvas: "比例缩放适应画布",
@@ -566,6 +581,12 @@ export const translations: Record<Language, TranslationSchema> = {
     githubRepo: "查看 GitHub 仓库",
     lockAspectRatio: "锁定宽高比",
     unlockAspectRatio: "解锁宽高比",
+    scaleExistingFrames: "同步缩放已有帧",
+    scaleExistingFramesHint: "开启后，修改画布分辨率会同时缩放已有帧的位置和大小。",
+    autoCropCanvas: "自动裁切画布",
+    autoCropCanvasHint: "识别所有帧的可见像素边缘，按最小包围范围裁切画布。",
+    autoCropCanvasSuccess: "已按可见像素裁切画布",
+    autoCropCanvasEmpty: "未检测到可见帧像素",
     reduceFrames: {
       title: "智能抽帧",
       every: "每隔",

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Palette, Pipette, Unlock } from 'lucide-react';
+import { Crop, Loader2, Lock, Palette, Pipette, Unlock } from 'lucide-react';
 import type { CanvasConfig } from '../types';
 import type { TranslationSchema } from '../utils/translations';
 
@@ -13,11 +13,18 @@ interface SidebarCanvasSettingsPanelProps {
     | 'transparent'
     | 'lockAspectRatio'
     | 'unlockAspectRatio'
+    | 'scaleExistingFrames'
+    | 'scaleExistingFramesHint'
+    | 'autoCropCanvas'
+    | 'autoCropCanvasHint'
   >;
   bgRemovalLabels: TranslationSchema['bgRemoval'];
   canvasConfig: CanvasConfig;
   exportFormat: 'gif' | 'apng' | 'webp';
   isAspectRatioLocked: boolean;
+  shouldScaleExistingFrames: boolean;
+  canAutoCropCanvas: boolean;
+  isAutoCroppingCanvas: boolean;
   isGifTransparentEnabled: boolean;
   gifTransparentColor: string;
   isGifEyeDropperActive: boolean;
@@ -25,6 +32,8 @@ interface SidebarCanvasSettingsPanelProps {
   onCanvasWidthChange: (width: number) => void;
   onCanvasHeightChange: (height: number) => void;
   onToggleAspectRatioLock: () => void;
+  onScaleExistingFramesChange: (enabled: boolean) => void;
+  onAutoCropCanvas: () => void;
   onTransparentChange: (transparent: boolean) => void;
   onGifTransparentEnabledChange: (enabled: boolean) => void;
   onGifTransparentColorChange: (color: string) => void;
@@ -33,6 +42,25 @@ interface SidebarCanvasSettingsPanelProps {
   onBackgroundEyeDropperToggle: () => void;
 }
 
+const ToggleSwitch: React.FC<{
+  id: string;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}> = ({ id, enabled, onChange }) => (
+  <button
+    id={id}
+    type="button"
+    onClick={() => onChange(!enabled)}
+    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${enabled ? 'bg-blue-600' : 'bg-gray-700'
+      }`}
+  >
+    <span
+      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'
+        }`}
+    />
+  </button>
+);
+
 export const SidebarCanvasSettingsPanel: React.FC<SidebarCanvasSettingsPanelProps> = ({
   title,
   labels,
@@ -40,6 +68,9 @@ export const SidebarCanvasSettingsPanel: React.FC<SidebarCanvasSettingsPanelProp
   canvasConfig,
   exportFormat,
   isAspectRatioLocked,
+  shouldScaleExistingFrames,
+  canAutoCropCanvas,
+  isAutoCroppingCanvas,
   isGifTransparentEnabled,
   gifTransparentColor,
   isGifEyeDropperActive,
@@ -47,6 +78,8 @@ export const SidebarCanvasSettingsPanel: React.FC<SidebarCanvasSettingsPanelProp
   onCanvasWidthChange,
   onCanvasHeightChange,
   onToggleAspectRatioLock,
+  onScaleExistingFramesChange,
+  onAutoCropCanvas,
   onTransparentChange,
   onGifTransparentEnabledChange,
   onGifTransparentColorChange,
@@ -88,6 +121,40 @@ export const SidebarCanvasSettingsPanel: React.FC<SidebarCanvasSettingsPanelProp
           />
         </div>
       </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 pr-3">
+          <label className="text-xs text-gray-400 font-medium cursor-pointer" htmlFor="scale-existing-frames-toggle">
+            {labels.scaleExistingFrames}
+          </label>
+          <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">
+            {labels.scaleExistingFramesHint}
+          </p>
+        </div>
+        <ToggleSwitch
+          id="scale-existing-frames-toggle"
+          enabled={shouldScaleExistingFrames}
+          onChange={onScaleExistingFramesChange}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={onAutoCropCanvas}
+        disabled={!canAutoCropCanvas || isAutoCroppingCanvas}
+        className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-left transition-colors hover:border-gray-600 hover:bg-gray-800/80 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-700"
+        title={labels.autoCropCanvasHint}
+      >
+        <span className="min-w-0">
+          <span className="flex items-center gap-2 text-xs font-medium text-gray-300">
+            {isAutoCroppingCanvas ? <Loader2 size={13} className="animate-spin text-blue-400" /> : <Crop size={13} className="text-blue-400" />}
+            {labels.autoCropCanvas}
+          </span>
+          <span className="mt-1 block text-[10px] leading-relaxed text-gray-600">
+            {labels.autoCropCanvasHint}
+          </span>
+        </span>
+      </button>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">

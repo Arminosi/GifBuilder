@@ -43,6 +43,11 @@ export const HistorySnapshotsDrawer: React.FC<HistorySnapshotsDrawerProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const getSnapshotFormat = (snapshot: HistorySnapshot) => snapshot.format || 'gif';
+  const getSnapshotExtension = (snapshot: HistorySnapshot) => getSnapshotFormat(snapshot) === 'apng'
+    ? 'png'
+    : getSnapshotFormat(snapshot);
+
   return (
     <div className="absolute top-16 right-0 bottom-0 w-80 bg-gray-900 border-l border-gray-800 z-30 shadow-2xl transform transition-transform p-4 overflow-y-auto custom-scrollbar flex flex-col">
       <div className="flex justify-between items-center mb-4 shrink-0">
@@ -52,24 +57,32 @@ export const HistorySnapshotsDrawer: React.FC<HistorySnapshotsDrawerProps> = ({
 
       <div className="space-y-3 flex-1 overflow-y-auto pb-4">
         {snapshots.length === 0 && <p className="text-gray-500 text-sm italic">{labels.noRecords}</p>}
-        {snapshots.map((snap) => (
-          <div key={snap.id} className="bg-gray-800 p-3 rounded border border-gray-700 hover:border-blue-500 transition-colors group">
-            <div className="flex justify-between items-start mb-1">
-              <span className="font-medium text-sm text-gray-200 truncate pr-2">{snap.name}</span>
-              <button
-                onClick={() => onDeleteSnapshot(snap.id)}
-                className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+        {snapshots.map((snap) => {
+          const format = getSnapshotFormat(snap);
+
+          return (
+            <div key={snap.id} className="bg-gray-800 p-3 rounded border border-gray-700 hover:border-blue-500 transition-colors group">
+              <div className="flex justify-between items-start mb-1">
+                <div className="min-w-0 pr-2">
+                  <span className="block font-medium text-sm text-gray-200 truncate">{snap.name}</span>
+                  <span className="mt-1 inline-flex rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-300">
+                    {format}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onDeleteSnapshot(snap.id)}
+                  className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
 
             {snap.thumbnail ? (
               <div className="mb-2 w-full h-24 bg-gray-900 rounded overflow-hidden flex items-center justify-center border border-gray-800 relative group/thumb">
                 <img src={snap.thumbnail} alt={snap.name} className="max-w-full max-h-full" />
                 <a
                   href={snap.thumbnail}
-                  download={`gif_builder_${snap.timestamp}.gif`}
+                  download={`gif_builder_${snap.timestamp}.${getSnapshotExtension(snap)}`}
                   className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-all duration-200"
                   title={labels.download}
                   onClick={(event) => event.stopPropagation()}
@@ -107,7 +120,8 @@ export const HistorySnapshotsDrawer: React.FC<HistorySnapshotsDrawerProps> = ({
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {snapshots.length > 0 && (

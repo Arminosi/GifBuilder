@@ -249,6 +249,8 @@ const App: React.FC = () => {
   // Canvas Aspect Ratio Lock
   const [isAspectRatioLocked, setIsAspectRatioLocked] = useState(false);
   const [aspectRatio, setAspectRatio] = useState(1);
+  const [shouldScaleExistingFrames, setShouldScaleExistingFrames] = useState(false);
+  const [isAutoCroppingCanvas, setIsAutoCroppingCanvas] = useState(false);
 
   // Reduce Frames State
   const [reduceKeep, setReduceKeep] = useState<number>(3);
@@ -627,6 +629,13 @@ const App: React.FC = () => {
   const isVideoFile = (file: File) => {
     const name = file.name.toLowerCase();
     return file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogv)$/i.test(name);
+  };
+
+  const sortFilesByFilenameAsc = (files: File[]) => {
+    return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }));
   };
 
   const openVideoImportSettings = async (
@@ -1121,6 +1130,32 @@ const App: React.FC = () => {
     setContextMenu(null);
   };
 
+  const handleReverseSelectedFrames = () => {
+    if (selectedFrameIds.size < 2) {
+      setContextMenu(null);
+      return;
+    }
+
+    setAppState(prev => {
+      const selectedFramesInOrder = prev.frames.filter(frame => selectedFrameIds.has(frame.id));
+      const reversedSelectedFrames = [...selectedFramesInOrder].reverse();
+      let replacementIndex = 0;
+
+      return {
+        ...prev,
+        frames: prev.frames.map(frame => {
+          if (!selectedFrameIds.has(frame.id)) {
+            return frame;
+          }
+
+          return reversedSelectedFrames[replacementIndex++];
+        }),
+      };
+    }, 'reorderFrames');
+
+    setContextMenu(null);
+  };
+
   const handleContextDelete = () => {
     if (!contextMenu) return;
 
@@ -1189,7 +1224,7 @@ const App: React.FC = () => {
     if (!files || files.length === 0) return;
     if (insertTargetIndex === null) return;
 
-    const incomingFiles = Array.from(files);
+    const incomingFiles = sortFilesByFilenameAsc(Array.from(files));
     const videoFiles = incomingFiles.filter(isVideoFile);
     if (videoFiles.length > 0) {
       await openVideoImportSettings(videoFiles, 'insert', insertTargetIndex);
@@ -1205,8 +1240,8 @@ const App: React.FC = () => {
     const fileDurationMap = new Map<string, number>(); // Track durations from metadata
     let metadataDefaultDuration: number | undefined;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < incomingFiles.length; i++) {
+      const file = incomingFiles[i];
       const isZip = file.type === 'application/zip' ||
         file.type === 'application/x-zip-compressed' ||
         file.name.toLowerCase().endsWith('.zip');
@@ -1221,7 +1256,7 @@ const App: React.FC = () => {
           if (extractionResult.files.length === 0) {
             showNotification(t.zipNoImages);
           } else {
-            allFiles.push(...extractionResult.files);
+            allFiles.push(...sortFilesByFilenameAsc(extractionResult.files));
 
             // Store duration metadata if present
             if (extractionResult.durationMap) {
@@ -1500,7 +1535,7 @@ const App: React.FC = () => {
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const incomingFiles = Array.from(files);
+    const incomingFiles = sortFilesByFilenameAsc(Array.from(files));
     const videoFiles = incomingFiles.filter(isVideoFile);
     if (videoFiles.length > 0) {
       await openVideoImportSettings(videoFiles, 'append');
@@ -1520,8 +1555,8 @@ const App: React.FC = () => {
     const fileDurationMap = new Map<string, number>(); // Track durations from metadata
     let metadataDefaultDuration: number | undefined;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < incomingFiles.length; i++) {
+      const file = incomingFiles[i];
       const isZip = file.type === 'application/zip' ||
         file.type === 'application/x-zip-compressed' ||
         file.name.toLowerCase().endsWith('.zip');
@@ -1536,7 +1571,7 @@ const App: React.FC = () => {
           if (extractionResult.files.length === 0) {
             showNotification(t.zipNoImages);
           } else {
-            allFiles.push(...extractionResult.files);
+            allFiles.push(...sortFilesByFilenameAsc(extractionResult.files));
 
             // Store duration metadata if present
             if (extractionResult.durationMap) {
@@ -2148,7 +2183,12 @@ const App: React.FC = () => {
     }), 'batchUpdate');
   };
 
-  const saveSnapshot = useCallback(async (providedName?: string, thumbnail?: string, thumbnailBlob?: Blob) => {
+  const saveSnapshot = useCallback(async (
+    providedName?: string,
+    thumbnail?: string,
+    thumbnailBlob?: Blob,
+    format: HistorySnapshot['format'] = 'gif'
+  ) => {
     const name = providedName || prompt(translations[language].promptSave, `Version ${snapshots.length + 1}`);
     if (name) {
       const snapshot: HistorySnapshot = {
@@ -2157,7 +2197,8 @@ const App: React.FC = () => {
         name,
         frames: [...frames],
         canvasConfig: { ...canvasConfig },
-        thumbnail: thumbnail
+        thumbnail,
+        format
       };
 
       setSnapshots(prev => [snapshot, ...prev]);
@@ -2227,22 +2268,17 @@ const App: React.FC = () => {
       const newWidth = width || 100;
       const newHeight = isAspectRatioLocked ? Math.round(newWidth / aspectRatio) : prev.canvasConfig.height;
 
-      // Calculate scale ratios
-      const scaleX = newWidth / prev.canvasConfig.width;
-      const scaleY = newHeight / prev.canvasConfig.height;
-
-      // Scale all frames
-      const scaledFrames = prev.frames.map(frame => ({
-        ...frame,
-        x: Math.round(frame.x * scaleX),
-        y: Math.round(frame.y * scaleY),
-        width: Math.round(frame.width * scaleX),
-        height: Math.round(frame.height * scaleY)
-      }));
-
       return {
         ...prev,
-        frames: scaledFrames,
+        frames: shouldScaleExistingFrames
+          ? prev.frames.map(frame => ({
+            ...frame,
+            x: Math.round(frame.x * (newWidth / prev.canvasConfig.width)),
+            y: Math.round(frame.y * (newHeight / prev.canvasConfig.height)),
+            width: Math.round(frame.width * (newWidth / prev.canvasConfig.width)),
+            height: Math.round(frame.height * (newHeight / prev.canvasConfig.height))
+          }))
+          : prev.frames,
         canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
       };
     });
@@ -2253,25 +2289,141 @@ const App: React.FC = () => {
       const newHeight = height || 100;
       const newWidth = isAspectRatioLocked ? Math.round(newHeight * aspectRatio) : prev.canvasConfig.width;
 
-      // Calculate scale ratios
-      const scaleX = newWidth / prev.canvasConfig.width;
-      const scaleY = newHeight / prev.canvasConfig.height;
-
-      // Scale all frames
-      const scaledFrames = prev.frames.map(frame => ({
-        ...frame,
-        x: Math.round(frame.x * scaleX),
-        y: Math.round(frame.y * scaleY),
-        width: Math.round(frame.width * scaleX),
-        height: Math.round(frame.height * scaleY)
-      }));
-
       return {
         ...prev,
-        frames: scaledFrames,
+        frames: shouldScaleExistingFrames
+          ? prev.frames.map(frame => ({
+            ...frame,
+            x: Math.round(frame.x * (newWidth / prev.canvasConfig.width)),
+            y: Math.round(frame.y * (newHeight / prev.canvasConfig.height)),
+            width: Math.round(frame.width * (newWidth / prev.canvasConfig.width)),
+            height: Math.round(frame.height * (newHeight / prev.canvasConfig.height))
+          }))
+          : prev.frames,
         canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
       };
     });
+  };
+
+  const loadFrameImageForCrop = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load frame image for crop'));
+      img.src = src;
+    });
+  };
+
+  const handleAutoCropCanvas = async () => {
+    if (frames.length === 0 || isAutoCroppingCanvas) return;
+
+    const canvasWidth = Math.max(1, Math.round(canvasConfig.width));
+    const canvasHeight = Math.max(1, Math.round(canvasConfig.height));
+    const scanCanvas = document.createElement('canvas');
+    scanCanvas.width = canvasWidth;
+    scanCanvas.height = canvasHeight;
+    const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+    if (!ctx) {
+      showNotification(language === 'zh' ? '无法扫描画布像素' : 'Unable to scan canvas pixels');
+      return;
+    }
+
+    setIsAutoCroppingCanvas(true);
+
+    try {
+      let cropLeft = canvasWidth;
+      let cropTop = canvasHeight;
+      let cropRight = -1;
+      let cropBottom = -1;
+
+      for (const frame of frames) {
+        const img = await loadFrameImageForCrop(frame.previewUrl);
+
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        if (frame.rotation) {
+          ctx.save();
+          const cx = frame.x + frame.width / 2;
+          const cy = frame.y + frame.height / 2;
+          ctx.translate(cx, cy);
+          ctx.rotate((frame.rotation * Math.PI) / 180);
+
+          if (Math.abs(frame.rotation % 180) === 90) {
+            ctx.drawImage(img, -frame.height / 2, -frame.width / 2, frame.height, frame.width);
+          } else {
+            ctx.drawImage(img, -frame.width / 2, -frame.height / 2, frame.width, frame.height);
+          }
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, frame.x, frame.y, frame.width, frame.height);
+        }
+
+        const data = ctx.getImageData(0, 0, canvasWidth, canvasHeight).data;
+        let frameLeft = canvasWidth;
+        let frameTop = canvasHeight;
+        let frameRight = -1;
+        let frameBottom = -1;
+
+        for (let y = 0; y < canvasHeight; y++) {
+          for (let x = 0; x < canvasWidth; x++) {
+            const alpha = data[(y * canvasWidth + x) * 4 + 3];
+            if (alpha === 0) continue;
+
+            if (x < frameLeft) frameLeft = x;
+            if (x > frameRight) frameRight = x;
+            if (y < frameTop) frameTop = y;
+            if (y > frameBottom) frameBottom = y;
+          }
+        }
+
+        if (frameRight === -1) continue;
+
+        cropLeft = Math.min(cropLeft, frameLeft);
+        cropTop = Math.min(cropTop, frameTop);
+        cropRight = Math.max(cropRight, frameRight);
+        cropBottom = Math.max(cropBottom, frameBottom);
+      }
+
+      if (cropRight === -1) {
+        showNotification(t.autoCropCanvasEmpty);
+        return;
+      }
+
+      const nextWidth = Math.max(1, cropRight - cropLeft + 1);
+      const nextHeight = Math.max(1, cropBottom - cropTop + 1);
+
+      setAppState(prev => ({
+        ...prev,
+        frames: prev.frames.map(frame => ({
+          ...frame,
+          x: frame.x - cropLeft,
+          y: frame.y - cropTop,
+        })),
+        canvasConfig: {
+          ...prev.canvasConfig,
+          width: nextWidth,
+          height: nextHeight,
+          backgroundImageX: prev.canvasConfig.backgroundImageX === undefined
+            ? prev.canvasConfig.backgroundImageX
+            : prev.canvasConfig.backgroundImageX - cropLeft,
+          backgroundImageY: prev.canvasConfig.backgroundImageY === undefined
+            ? prev.canvasConfig.backgroundImageY
+            : prev.canvasConfig.backgroundImageY - cropTop,
+        },
+      }), 'batchUpdate');
+
+      if (isAspectRatioLocked) {
+        setAspectRatio(nextWidth / nextHeight);
+      }
+
+      showNotification(t.autoCropCanvasSuccess);
+    } catch (error) {
+      console.error('Failed to auto crop canvas', error);
+      showNotification(language === 'zh' ? '自动裁切画布失败' : 'Failed to auto crop canvas');
+    } finally {
+      setIsAutoCroppingCanvas(false);
+    }
   };
 
   const toggleAspectRatioLock = () => {
@@ -2345,7 +2497,7 @@ const App: React.FC = () => {
 
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      saveSnapshot(`${t.autoSaved} - ${timeStr}`, url, blob);
+      saveSnapshot(`${t.autoSaved} - ${timeStr}`, url, blob, exportFormat);
 
     } catch (error) {
       console.error(error);
@@ -2742,11 +2894,18 @@ const App: React.FC = () => {
                   transparent: t.transparent,
                   lockAspectRatio: t.lockAspectRatio,
                   unlockAspectRatio: t.unlockAspectRatio,
+                  scaleExistingFrames: t.scaleExistingFrames,
+                  scaleExistingFramesHint: t.scaleExistingFramesHint,
+                  autoCropCanvas: t.autoCropCanvas,
+                  autoCropCanvasHint: t.autoCropCanvasHint,
                 }}
                 bgRemovalLabels={t.bgRemoval}
                 canvasConfig={canvasConfig}
                 exportFormat={exportFormat}
                 isAspectRatioLocked={isAspectRatioLocked}
+                shouldScaleExistingFrames={shouldScaleExistingFrames}
+                canAutoCropCanvas={frames.length > 0}
+                isAutoCroppingCanvas={isAutoCroppingCanvas}
                 isGifTransparentEnabled={isGifTransparentEnabled}
                 gifTransparentColor={gifTransparentColor}
                 isGifEyeDropperActive={isGifEyeDropperActive}
@@ -2754,6 +2913,8 @@ const App: React.FC = () => {
                 onCanvasWidthChange={handleCanvasWidthChange}
                 onCanvasHeightChange={handleCanvasHeightChange}
                 onToggleAspectRatioLock={toggleAspectRatioLock}
+                onScaleExistingFramesChange={setShouldScaleExistingFrames}
+                onAutoCropCanvas={handleAutoCropCanvas}
                 onTransparentChange={handleTransparentChange}
                 onGifTransparentEnabledChange={setIsGifTransparentEnabled}
                 onGifTransparentColorChange={setGifTransparentColor}
@@ -3085,6 +3246,7 @@ const App: React.FC = () => {
         onPaste={handleContextPaste}
         onDuplicate={handleContextDuplicate}
         onInsert={handleContextInsert}
+        onReverseSelected={handleReverseSelectedFrames}
         onAlignCenter={() => handleAlignCenter('selected')}
         onFitContain={() => handleFitSelected('contain')}
         onFitFill={() => handleFitSelected('fill')}
