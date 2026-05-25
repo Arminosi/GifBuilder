@@ -185,6 +185,10 @@ export interface TranslationSchema {
   autoCropCanvasHint: string;
   autoCropCanvasSuccess: string;
   autoCropCanvasEmpty: string;
+  exportInPoint: string;
+  exportOutPoint: string;
+  clearExportRange: string;
+  exportRangeInvalid: string;
   reduceFrames: {
     title: string;
     every: string;
@@ -387,6 +391,10 @@ export const translations: Record<Language, TranslationSchema> = {
     autoCropCanvasHint: "Detect visible pixels across all frames and crop the canvas to the smallest shared bounds.",
     autoCropCanvasSuccess: "Canvas cropped to visible frame pixels",
     autoCropCanvasEmpty: "No visible frame pixels detected",
+    exportInPoint: "Export In",
+    exportOutPoint: "Export Out",
+    clearExportRange: "Clear In/Out",
+    exportRangeInvalid: "Invalid export range: out point must be after in point",
     reduceFrames: {
       title: "Reduce Frames",
       every: "Every",
@@ -587,6 +595,10 @@ export const translations: Record<Language, TranslationSchema> = {
     autoCropCanvasHint: "识别所有帧的可见像素边缘，按最小包围范围裁切画布。",
     autoCropCanvasSuccess: "已按可见像素裁切画布",
     autoCropCanvasEmpty: "未检测到可见帧像素",
+    exportInPoint: "导出入点",
+    exportOutPoint: "导出出点",
+    clearExportRange: "清空出入点",
+    exportRangeInvalid: "导出范围不合法：出点需要在入点之后",
     reduceFrames: {
       title: "智能抽帧",
       every: "每隔",
