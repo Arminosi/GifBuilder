@@ -269,7 +269,7 @@ const App: React.FC = () => {
   // Preview State
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewFrameIndex, setPreviewFrameIndex] = useState<number | null>(null);
-  const [syncPreviewSelection, setSyncPreviewSelection] = useState(false);
+  const [syncPreviewSelection, setSyncPreviewSelection] = useState(true);
 
   // Refs for preview loop to access latest state without restarting loop
   const selectedFrameIdsRef = useRef(selectedFrameIds);
@@ -701,16 +701,18 @@ const App: React.FC = () => {
   const setVideoImportInPoint = () => {
     if (!pendingVideoImport) return;
     const currentTime = videoPreviewRef.current?.currentTime ?? videoPreviewTime;
-    const startTime = Math.min(currentTime, Math.max(0, pendingVideoImport.settings.endTime - 0.1));
+    const duration = pendingVideoImport.metadata.duration || currentTime;
+    const startTime = Math.max(0, Math.min(currentTime, duration));
     updatePendingVideoSettings({ startTime: Number(startTime.toFixed(3)) });
   };
 
   const setVideoImportOutPoint = () => {
     if (!pendingVideoImport) return;
     const currentTime = videoPreviewRef.current?.currentTime ?? videoPreviewTime;
-    const endTime = Math.max(currentTime, pendingVideoImport.settings.startTime + 0.1);
+    const duration = pendingVideoImport.metadata.duration || currentTime;
+    const endTime = Math.max(0, Math.min(currentTime, duration));
     updatePendingVideoSettings({
-      endTime: Number(Math.min(endTime, pendingVideoImport.metadata.duration || endTime).toFixed(3))
+      endTime: Number(endTime.toFixed(3))
     });
   };
 
@@ -735,7 +737,7 @@ const App: React.FC = () => {
     };
 
     if (normalizedSettings.endTime <= normalizedSettings.startTime) {
-      showNotification(language === 'zh' ? '结束时间需要大于开始时间' : 'End time must be after start time');
+      showNotification(language === 'zh' ? '出入点不合法：出点需要在入点之后' : 'Invalid in/out points: out point must be after in point');
       return;
     }
 
@@ -1369,7 +1371,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Input protection: don't trigger if user is typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      const target = e.target;
+      const isEditableTarget = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable);
+
+      if (isEditableTarget) {
         return;
       }
 
@@ -1407,7 +1415,25 @@ const App: React.FC = () => {
         }
       } else {
         // Non-modifier shortcuts
-        if (e.key === '[' || e.key === ']') {
+        if (e.code === 'Space') {
+          const hasBlockingDialog = showInsertModal
+            || Boolean(pendingVideoImport)
+            || isImportingVideo
+            || Boolean(generatedGif)
+            || isGenerating
+            || showSnapshots
+            || showHistoryStack
+            || showTransparentConfirm
+            || clearHistoryConfirm
+            || clearFramesConfirm
+            || Boolean(restoreConfirmId)
+            || githubLinkConfirm;
+
+          if (!hasBlockingDialog && frames.length > 0) {
+            e.preventDefault();
+            setIsPlaying(prev => !prev);
+          }
+        } else if (e.key === '[' || e.key === ']') {
           const taggedFrameIndexes = frames
             .map((frame, index) => frame.colorTag ? index : -1)
             .filter(index => index !== -1);
@@ -1438,7 +1464,30 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, canRedo, undo, redo, handleDuplicate, handleCopy, handlePaste, frames, selectedFrameIds, selectFrameByIndex]);
+  }, [
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    handleDuplicate,
+    handleCopy,
+    handlePaste,
+    frames,
+    selectedFrameIds,
+    selectFrameByIndex,
+    showInsertModal,
+    pendingVideoImport,
+    isImportingVideo,
+    generatedGif,
+    isGenerating,
+    showSnapshots,
+    showHistoryStack,
+    showTransparentConfirm,
+    clearHistoryConfirm,
+    clearFramesConfirm,
+    restoreConfirmId,
+    githubLinkConfirm,
+  ]);
 
 
   const handleFileUpload = async (files: FileList | null) => {

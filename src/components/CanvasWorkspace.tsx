@@ -105,6 +105,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               >
                 {isPlaying ? <div className="w-3 h-3 bg-current rounded-sm" /> : <Play size={12} fill="currentColor" />}
                 {isPlaying ? labels.preview.pause : labels.preview.play}
+                <kbd className="ml-1 rounded border border-current/30 px-1 text-[10px] opacity-70">Space</kbd>
               </button>
             </>
           )}

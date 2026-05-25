@@ -15,6 +15,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
   label = 'Timeline'
 }) => {
   const trackRef = useRef<HTMLDivElement>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const timeline = useMemo(() => {
@@ -56,16 +57,30 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    activePointerIdRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
     pickFrameFromPointer(event.clientX);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.buttons !== 1) {
+    if (activePointerIdRef.current !== event.pointerId) {
       return;
     }
 
+    event.preventDefault();
     pickFrameFromPointer(event.clientX);
+  };
+
+  const stopDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    activePointerIdRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   if (frames.length === 0) return null;
@@ -82,8 +97,10 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
         tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
         onPointerLeave={() => setHoverIndex(null)}
-        className="relative h-7 cursor-pointer select-none rounded border border-gray-800 bg-gray-900 px-1 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+        className="relative h-7 cursor-pointer select-none touch-none rounded border border-gray-800 bg-gray-900 px-1 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
       >
         <div className="flex h-full overflow-hidden rounded bg-gray-800">
           {frames.map((frame, index) => {
