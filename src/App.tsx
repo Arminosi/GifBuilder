@@ -61,6 +61,7 @@ const TAG_COLORS = [
   '#a855f7', // purple
   '#ec4899', // pink
 ];
+const QUICK_MARK_COLOR = TAG_COLORS[4]; // blue
 
 type DitherOptionValue = Exclude<CanvasConfig['dither'], false> | 'none';
 
@@ -1415,23 +1416,28 @@ const App: React.FC = () => {
         }
       } else {
         // Non-modifier shortcuts
-        if (e.code === 'Space') {
-          const hasBlockingDialog = showInsertModal
-            || Boolean(pendingVideoImport)
-            || isImportingVideo
-            || Boolean(generatedGif)
-            || isGenerating
-            || showSnapshots
-            || showHistoryStack
-            || showTransparentConfirm
-            || clearHistoryConfirm
-            || clearFramesConfirm
-            || Boolean(restoreConfirmId)
-            || githubLinkConfirm;
+        const hasBlockingDialog = showInsertModal
+          || Boolean(pendingVideoImport)
+          || isImportingVideo
+          || Boolean(generatedGif)
+          || isGenerating
+          || showSnapshots
+          || showHistoryStack
+          || showTransparentConfirm
+          || clearHistoryConfirm
+          || clearFramesConfirm
+          || Boolean(restoreConfirmId)
+          || githubLinkConfirm;
 
+        if (e.code === 'Space') {
           if (!hasBlockingDialog && frames.length > 0) {
             e.preventDefault();
             setIsPlaying(prev => !prev);
+          }
+        } else if (e.key.toLowerCase() === 'm') {
+          if (!hasBlockingDialog && selectedFrameIds.size > 0) {
+            e.preventDefault();
+            handleSetColorTag(QUICK_MARK_COLOR);
           }
         } else if (e.key === '[' || e.key === ']') {
           const taggedFrameIndexes = frames
@@ -1472,6 +1478,7 @@ const App: React.FC = () => {
     handleDuplicate,
     handleCopy,
     handlePaste,
+    handleSetColorTag,
     frames,
     selectedFrameIds,
     selectFrameByIndex,
