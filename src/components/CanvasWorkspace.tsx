@@ -17,6 +17,8 @@ interface CanvasWorkspaceProps {
   isPlaying: boolean;
   previewFrameIndex: number | null;
   syncPreviewSelection: boolean;
+  exportInFrameIndex: number | null;
+  exportOutFrameIndex: number | null;
   config: CanvasConfig;
   gifTransparentColor: string;
   isGifTransparentEnabled: boolean;
@@ -34,6 +36,9 @@ interface CanvasWorkspaceProps {
     batchMode: string;
     frame: FrameLabels;
     preview: TranslationSchema['preview'];
+    exportInPoint: string;
+    exportOutPoint: string;
+    clearExportRange: string;
   };
   onSyncPreviewSelectionChange: (enabled: boolean) => void;
   onPlayingChange: (playing: boolean) => void;
@@ -42,6 +47,9 @@ interface CanvasWorkspaceProps {
   onColorPick: (color: string) => void;
   onSelectFrame: (id: string, event: React.MouseEvent) => void;
   onSelectFrameByIndex: (index: number) => void;
+  onSetExportInPoint: () => void;
+  onSetExportOutPoint: () => void;
+  onClearExportRange: () => void;
 }
 
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
@@ -55,6 +63,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   isPlaying,
   previewFrameIndex,
   syncPreviewSelection,
+  exportInFrameIndex,
+  exportOutFrameIndex,
   config,
   gifTransparentColor,
   isGifTransparentEnabled,
@@ -69,6 +79,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onColorPick,
   onSelectFrame,
   onSelectFrameByIndex,
+  onSetExportInPoint,
+  onSetExportOutPoint,
+  onClearExportRange,
 }) => {
   if (!isVisible) return null;
 
@@ -133,12 +146,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         gifTransparentColor={gifTransparentColor}
         isGifTransparentEnabled={isGifTransparentEnabled}
       />
-      {selectedFrameIds.size > 1 && (
-        <div className="absolute bottom-14 left-4 bg-blue-900/80 text-blue-200 px-3 py-1 rounded-full text-xs border border-blue-700 backdrop-blur-sm shadow-lg pointer-events-none">
-          {labels.selectedFrames.replace('{count}', selectedFrameIds.size.toString())} ({labels.batchMode})
-        </div>
-      )}
-
       {frames.length > 0 && (
         <>
           <Timeline
@@ -151,7 +158,20 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           <GlobalFrameTimeline
             frames={frames}
             selectedFrameIds={selectedFrameIds}
+            exportInFrameIndex={exportInFrameIndex}
+            exportOutFrameIndex={exportOutFrameIndex}
+            isLargeScreen={isLargeScreen}
+            labels={{
+              inPoint: labels.exportInPoint,
+              outPoint: labels.exportOutPoint,
+              clearRange: labels.clearExportRange,
+              selectedFrames: labels.selectedFrames,
+              batchMode: labels.batchMode,
+            }}
             onSelectFrame={onSelectFrameByIndex}
+            onSetExportInPoint={onSetExportInPoint}
+            onSetExportOutPoint={onSetExportOutPoint}
+            onClearExportRange={onClearExportRange}
           />
         </>
       )}

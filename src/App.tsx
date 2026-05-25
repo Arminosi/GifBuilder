@@ -273,6 +273,8 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewFrameIndex, setPreviewFrameIndex] = useState<number | null>(null);
   const [syncPreviewSelection, setSyncPreviewSelection] = useState(true);
+  const [exportInFrameIndex, setExportInFrameIndex] = useState<number | null>(null);
+  const [exportOutFrameIndex, setExportOutFrameIndex] = useState<number | null>(null);
 
   // Refs for preview loop to access latest state without restarting loop
   const selectedFrameIdsRef = useRef(selectedFrameIds);
@@ -286,6 +288,17 @@ const App: React.FC = () => {
   useEffect(() => {
     syncPreviewSelectionRef.current = syncPreviewSelection;
   }, [syncPreviewSelection]);
+
+  useEffect(() => {
+    setExportInFrameIndex(prev => {
+      if (prev === null) return prev;
+      return frames.length === 0 ? null : Math.min(prev, frames.length - 1);
+    });
+    setExportOutFrameIndex(prev => {
+      if (prev === null) return prev;
+      return frames.length === 0 ? null : Math.min(prev, frames.length - 1);
+    });
+  }, [frames.length]);
 
   useEffect(() => {
     if (!isDitherMenuOpen) return;
@@ -1403,6 +1416,40 @@ const App: React.FC = () => {
     setInsertTargetIndex(null);
   };
 
+  const getCurrentTimelineFrameIndex = useCallback(() => {
+    if (frames.length === 0) return -1;
+    if (isPlaying && previewFrameIndex !== null) {
+      return previewFrameIndex;
+    }
+
+    const targetId = lastSelectedIdRef.current && selectedFrameIds.has(lastSelectedIdRef.current)
+      ? lastSelectedIdRef.current
+      : Array.from(selectedFrameIds).pop();
+
+    return targetId ? frames.findIndex(frame => frame.id === targetId) : -1;
+  }, [frames, isPlaying, previewFrameIndex, selectedFrameIds]);
+
+  const setExportInPointFromCurrentFrame = useCallback(() => {
+    const frameIndex = getCurrentTimelineFrameIndex();
+    if (frameIndex < 0) return;
+
+    setExportInFrameIndex(frameIndex);
+    showNotification(`${t.exportInPoint}: #${frameIndex + 1}`);
+  }, [getCurrentTimelineFrameIndex, t.exportInPoint]);
+
+  const setExportOutPointFromCurrentFrame = useCallback(() => {
+    const frameIndex = getCurrentTimelineFrameIndex();
+    if (frameIndex < 0) return;
+
+    setExportOutFrameIndex(frameIndex);
+    showNotification(`${t.exportOutPoint}: #${frameIndex + 1}`);
+  }, [getCurrentTimelineFrameIndex, t.exportOutPoint]);
+
+  const clearExportRange = useCallback(() => {
+    setExportInFrameIndex(null);
+    setExportOutFrameIndex(null);
+  }, []);
+
   // Keyboard Shortcuts Handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1474,6 +1521,15 @@ const App: React.FC = () => {
             e.preventDefault();
             handleSetColorTag(QUICK_MARK_COLOR);
           }
+        } else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'o') {
+          if (!hasBlockingDialog && frames.length > 0) {
+            e.preventDefault();
+            if (e.key.toLowerCase() === 'i') {
+              setExportInPointFromCurrentFrame();
+            } else {
+              setExportOutPointFromCurrentFrame();
+            }
+          }
         } else if (e.key === '[' || e.key === ']') {
           const taggedFrameIndexes = frames
             .map((frame, index) => frame.colorTag ? index : -1)
@@ -1517,6 +1573,8 @@ const App: React.FC = () => {
     frames,
     selectedFrameIds,
     selectFrameByIndex,
+    setExportInPointFromCurrentFrame,
+    setExportOutPointFromCurrentFrame,
     showInsertModal,
     pendingVideoImport,
     isImportingVideo,
@@ -2436,6 +2494,17 @@ const App: React.FC = () => {
 
   const handleGenerate = async () => {
     if (frames.length === 0) return;
+    const exportStartIndex = exportInFrameIndex ?? 0;
+    const exportEndIndex = exportOutFrameIndex ?? frames.length - 1;
+
+    if (exportStartIndex > exportEndIndex) {
+      showNotification(t.exportRangeInvalid);
+      return;
+    }
+
+    const framesToExport = frames.slice(exportStartIndex, exportEndIndex + 1);
+    if (framesToExport.length === 0) return;
+
     setIsGenerating(true);
     setProgress(0);
     setProgressText(t.generation.preparing);
@@ -2466,7 +2535,7 @@ const App: React.FC = () => {
       };
       const blob = exportFormat === 'apng'
         ? await generateAPNG(
-          frames,
+          framesToExport,
           exportConfig,
           (p) => setProgress(p * 100),
           (status) => setProgressText(status),
@@ -2476,7 +2545,7 @@ const App: React.FC = () => {
           ? await (async () => {
             const { generateWebP } = await import('./utils/webpHelper');
             return generateWebP(
-              frames,
+              framesToExport,
               exportConfig,
               (p) => setProgress(p * 100),
               (status) => setProgressText(status),
@@ -2484,7 +2553,7 @@ const App: React.FC = () => {
             );
           })()
         : await generateGIF(
-          frames,
+          framesToExport,
           exportConfig,
           (p) => setProgress(p * 100),
           !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
@@ -3037,6 +3106,8 @@ const App: React.FC = () => {
             isPlaying={isPlaying}
             previewFrameIndex={previewFrameIndex}
             syncPreviewSelection={syncPreviewSelection}
+            exportInFrameIndex={exportInFrameIndex}
+            exportOutFrameIndex={exportOutFrameIndex}
             config={canvasConfig}
             gifTransparentColor={gifTransparentColor}
             isGifTransparentEnabled={isGifTransparentEnabled}
@@ -3054,6 +3125,9 @@ const App: React.FC = () => {
               batchMode: t.batchMode,
               frame: t.frame,
               preview: t.preview,
+              exportInPoint: t.exportInPoint,
+              exportOutPoint: t.exportOutPoint,
+              clearExportRange: t.clearExportRange,
             }}
             onSyncPreviewSelectionChange={setSyncPreviewSelection}
             onPlayingChange={setIsPlaying}
@@ -3073,6 +3147,9 @@ const App: React.FC = () => {
             }}
             onSelectFrame={handleSelection}
             onSelectFrameByIndex={selectFrameByIndex}
+            onSetExportInPoint={setExportInPointFromCurrentFrame}
+            onSetExportOutPoint={setExportOutPointFromCurrentFrame}
+            onClearExportRange={clearExportRange}
           />
 
           {/* Editor Resizer */}
