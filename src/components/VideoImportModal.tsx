@@ -36,15 +36,69 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
   onConfirm,
   closeLabel,
 }) => {
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
+  const isModalOpen = Boolean(pendingVideoImport);
+
+  React.useEffect(() => {
+    if (!isModalOpen) return;
+    modalRef.current?.focus();
+  }, [isModalOpen]);
+
   if (!pendingVideoImport) return null;
 
   const duration = Math.max(0.001, pendingVideoImport.metadata.duration);
-  const selectedDuration = Math.max(0, pendingVideoImport.settings.endTime - pendingVideoImport.settings.startTime);
-  const estimatedFrameCount = Math.max(1, Math.ceil(selectedDuration * pendingVideoImport.settings.fps));
+  const startTime = pendingVideoImport.settings.startTime;
+  const endTime = pendingVideoImport.settings.endTime;
+  const selectedDuration = Math.max(0, endTime - startTime);
+  const estimatedFrameCount = selectedDuration > 0
+    ? Math.max(1, Math.ceil(selectedDuration * pendingVideoImport.settings.fps))
+    : 0;
+  const hasInvalidRange = endTime <= startTime;
+  const getTimelinePercent = (time: number) => Math.min(100, Math.max(0, (time / duration) * 100));
+  const startPercent = getTimelinePercent(startTime);
+  const endPercent = getTimelinePercent(endTime);
+  const rangeLeft = hasInvalidRange ? Math.min(startPercent, endPercent) : startPercent;
+  const rangeWidth = hasInvalidRange ? Math.abs(startPercent - endPercent) : getTimelinePercent(selectedDuration);
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target;
+    const isTextInputTarget = target instanceof HTMLInputElement && ![
+      'button',
+      'checkbox',
+      'color',
+      'file',
+      'image',
+      'radio',
+      'range',
+      'reset',
+      'submit',
+    ].includes(target.type);
+    const isEditableTarget = isTextInputTarget
+      || target instanceof HTMLTextAreaElement
+      || target instanceof HTMLSelectElement
+      || (target instanceof HTMLElement && target.isContentEditable);
+
+    if (isImportingVideo || isEditableTarget || event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    if (key === 'i') {
+      event.preventDefault();
+      event.stopPropagation();
+      onSetInPoint();
+    } else if (key === 'o') {
+      event.preventDefault();
+      event.stopPropagation();
+      onSetOutPoint();
+    }
+  };
 
   return (
     <div
+      ref={modalRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      onKeyDown={handleKeyDown}
       onDragEnter={onStopModalDrag}
       onDragOver={onStopModalDrag}
       onDragLeave={onStopModalDrag}
@@ -79,18 +133,38 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
           </div>
 
           <div className="space-y-3">
-            <div className="relative h-2 rounded-full bg-gray-800 overflow-hidden border border-gray-700">
+            <div className="relative h-5">
+              <div className="absolute left-0 right-0 top-2 h-2 rounded-full bg-gray-800 overflow-hidden border border-gray-700">
+                <div
+                  className={`absolute top-0 bottom-0 ${hasInvalidRange ? 'bg-red-500/60' : 'bg-blue-500/70'}`}
+                  style={{
+                    left: `${rangeLeft}%`,
+                    width: `${rangeWidth}%`
+                  }}
+                />
+              </div>
               <div
-                className="absolute top-0 bottom-0 bg-blue-500/70"
+                className={`absolute top-0 bottom-0 w-0.5 ${hasInvalidRange ? 'bg-red-300' : 'bg-blue-300'}`}
                 style={{
-                  left: `${Math.min(100, Math.max(0, (pendingVideoImport.settings.startTime / duration) * 100))}%`,
-                  width: `${Math.min(100, Math.max(0, (selectedDuration / duration) * 100))}%`
+                  left: `${startPercent}%`
                 }}
-              />
+                title={language === 'zh' ? '入点' : 'In point'}
+              >
+                <span className={`absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 ${hasInvalidRange ? 'bg-red-300' : 'bg-blue-300'}`} />
+              </div>
+              <div
+                className={`absolute top-0 bottom-0 w-0.5 ${hasInvalidRange ? 'bg-red-300' : 'bg-blue-300'}`}
+                style={{
+                  left: `${endPercent}%`
+                }}
+                title={language === 'zh' ? '出点' : 'Out point'}
+              >
+                <span className={`absolute bottom-0 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 ${hasInvalidRange ? 'bg-red-300' : 'bg-blue-300'}`} />
+              </div>
               <div
                 className="absolute top-0 bottom-0 w-0.5 bg-white"
                 style={{
-                  left: `${Math.min(100, Math.max(0, (videoPreviewTime / duration) * 100))}%`
+                  left: `${getTimelinePercent(videoPreviewTime)}%`
                 }}
               />
             </div>
@@ -117,6 +191,7 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
                   className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
                 >
                   {language === 'zh' ? '设为入点' : 'Set In'}
+                  <kbd className="ml-2 rounded border border-gray-600 bg-gray-900 px-1 text-[10px] text-gray-400">I</kbd>
                 </button>
                 <button
                   onClick={onSetOutPoint}
@@ -124,9 +199,15 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
                   className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-xs font-semibold text-gray-200 disabled:opacity-40"
                 >
                   {language === 'zh' ? '设为出点' : 'Set Out'}
+                  <kbd className="ml-2 rounded border border-gray-600 bg-gray-900 px-1 text-[10px] text-gray-400">O</kbd>
                 </button>
               </div>
             </div>
+            {hasInvalidRange && (
+              <p className="text-xs font-semibold text-red-300">
+                {language === 'zh' ? '出入点不合法：出点需要在入点之后。' : 'Invalid in/out points: out point must be after in point.'}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-xs">
@@ -136,14 +217,14 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
             </div>
             <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
               <div className="text-gray-500 mb-1">{language === 'zh' ? '选择区间' : 'Range'}</div>
-              <div className="text-gray-200 font-semibold">
-                {selectedDuration.toFixed(2)}s
+              <div className={`font-semibold ${hasInvalidRange ? 'text-red-300' : 'text-gray-200'}`}>
+                {hasInvalidRange ? (language === 'zh' ? '不合法' : 'Invalid') : `${selectedDuration.toFixed(2)}s`}
               </div>
             </div>
             <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
               <div className="text-gray-500 mb-1">{language === 'zh' ? '预计帧数' : 'Frames'}</div>
-              <div className="text-gray-200 font-semibold">
-                {estimatedFrameCount}
+              <div className={`font-semibold ${hasInvalidRange ? 'text-red-300' : 'text-gray-200'}`}>
+                {hasInvalidRange ? '--' : estimatedFrameCount}
               </div>
             </div>
           </div>
@@ -183,9 +264,9 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
                 disabled={isImportingVideo}
                 onChange={(event) => {
                   const value = Math.max(0, parseFloat(event.target.value) || 0);
-                  onUpdateSettings({ startTime: Math.min(value, Math.max(0, pendingVideoImport.settings.endTime - 0.01)) });
+                  onUpdateSettings({ startTime: Math.min(value, pendingVideoImport.metadata.duration || value) });
                 }}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className={`w-full bg-gray-800 border rounded px-3 py-2 text-sm focus:outline-none ${hasInvalidRange ? 'border-red-500 focus:border-red-400' : 'border-gray-700 focus:border-blue-500'}`}
               />
             </div>
             <div>
@@ -201,14 +282,9 @@ export const VideoImportModal: React.FC<VideoImportModalProps> = ({
                 disabled={isImportingVideo}
                 onChange={(event) => {
                   const value = Math.max(0, parseFloat(event.target.value) || 0);
-                  onUpdateSettings({
-                    endTime: Math.min(
-                      Math.max(value, pendingVideoImport.settings.startTime + 0.01),
-                      pendingVideoImport.metadata.duration || value
-                    )
-                  });
+                  onUpdateSettings({ endTime: Math.min(value, pendingVideoImport.metadata.duration || value) });
                 }}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className={`w-full bg-gray-800 border rounded px-3 py-2 text-sm focus:outline-none ${hasInvalidRange ? 'border-red-500 focus:border-red-400' : 'border-gray-700 focus:border-blue-500'}`}
               />
             </div>
           </div>

@@ -27,12 +27,23 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const downloadLabel = format === 'apng'
+    ? t.download.replace(/GIF/gi, 'APNG')
+    : format === 'webp'
+      ? t.download.replace(/GIF/gi, 'WebP')
+      : t.download;
+  const titleLabel = format === 'apng'
+    ? t.title.replace(/GIF/gi, 'APNG')
+    : format === 'webp'
+      ? t.title.replace(/GIF/gi, 'WebP')
+      : t.title;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
           <h3 className="text-lg font-semibold text-white">
-            {!generatedGif ? t.title : t.resultTitle}
+            {!generatedGif ? titleLabel : t.resultTitle}
           </h3>
           {generatedGif && (
             <button
@@ -73,9 +84,9 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
               alt="Generated GIF"
               className="max-w-full max-h-[60vh] object-contain shadow-2xl rounded-lg border border-gray-800"
               style={{
-                backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
+                backgroundImage: 'conic-gradient(#ffffff 25%, #d1d5db 0 50%, #ffffff 0 75%, #d1d5db 0)',
                 backgroundSize: '20px 20px',
-                backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                backgroundPosition: '0 0',
                 backgroundColor: '#fff'
               }}
             />
@@ -95,7 +106,7 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
               download={`animation-${Date.now()}.${format === 'apng' ? 'png' : format}`}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20 flex items-center gap-2"
             >
-              {t.download}
+              {downloadLabel}
             </a>
           </div>
         )}

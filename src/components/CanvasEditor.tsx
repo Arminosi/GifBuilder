@@ -652,10 +652,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const canvasStyle = {
     width: config.width * scale,
     height: config.height * scale,
-    backgroundColor: config.transparent ? 'transparent' : (config.backgroundColor || '#ffffff'),
-    backgroundImage: config.transparent ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)' : 'none',
+    backgroundColor: config.transparent ? '#ffffff' : (config.backgroundColor || '#ffffff'),
+    backgroundImage: config.transparent ? 'conic-gradient(#ffffff 25%, #d1d5db 0 50%, #ffffff 0 75%, #d1d5db 0)' : 'none',
     backgroundSize: '20px 20px',
-    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
+    backgroundPosition: '0 0'
   };
 
   const frameStyle = {

@@ -46,6 +46,7 @@ export const saveSnapshotToDB = async (snapshot: HistorySnapshot, thumbnailBlob?
       id: snapshot.id,
       timestamp: snapshot.timestamp,
       name: snapshot.name,
+      format: snapshot.format || 'gif',
       canvasConfig: snapshot.canvasConfig,
       frames: framesToStore,
       thumbnailBlob: thumbnailBlob || null // Store the blob data
@@ -84,6 +85,7 @@ export const getSnapshotsFromDB = async (): Promise<HistorySnapshot[]> => {
           id: record.id,
           timestamp: record.timestamp,
           name: record.name,
+          format: record.format || 'gif',
           canvasConfig: record.canvasConfig,
           frames,
           thumbnail
