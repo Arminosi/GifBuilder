@@ -72,10 +72,10 @@ export const TransparentImage: React.FC<TransparentImageProps> = ({
       className={className}
       style={{
         ...style,
-        backgroundImage: enabled ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)' : 'none',
+        backgroundImage: enabled ? 'conic-gradient(#ffffff 25%, #d1d5db 0 50%, #ffffff 0 75%, #d1d5db 0)' : 'none',
         backgroundSize: '10px 10px',
-        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
-        backgroundColor: enabled ? 'transparent' : undefined
+        backgroundPosition: '0 0',
+        backgroundColor: enabled ? '#ffffff' : undefined
       }}
       draggable={draggable}
     />

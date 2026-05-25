@@ -73,9 +73,9 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
               alt="Generated GIF"
               className="max-w-full max-h-[60vh] object-contain shadow-2xl rounded-lg border border-gray-800"
               style={{
-                backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
+                backgroundImage: 'conic-gradient(#ffffff 25%, #d1d5db 0 50%, #ffffff 0 75%, #d1d5db 0)',
                 backgroundSize: '20px 20px',
-                backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                backgroundPosition: '0 0',
                 backgroundColor: '#fff'
               }}
             />
