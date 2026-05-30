@@ -1,16 +1,24 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { FrameData, CanvasConfig } from '../types';
+import { FrameData, CanvasConfig, LayerData, LayerTrack } from '../types';
 import { FrameLabels } from '../utils/translations';
+import { flattenTrackLayers, getActiveLayer, getFrameLayers } from '../utils/layerHelpers';
+import { resolveLayerAtFrame } from '../utils/layerRenderer';
 import { Move, ZoomIn, ZoomOut, Maximize, Lock, Unlock, Magnet, Info, ChevronLeft, RotateCw, Target, RefreshCw, StretchHorizontal, Pipette } from 'lucide-react';
 
 interface CanvasEditorProps {
   frame: FrameData | null;
   frameIndex?: number;
+  globalLayers?: LayerData[];
+  layerTracks?: LayerTrack[];
+  activeGlobalLayerId?: string | null;
   config: CanvasConfig;
   onUpdate: (updates: Partial<FrameData>, commit: boolean) => void;
+  onSelectLayer?: (layerId: string) => void;
+  onSelectGlobalLayer?: (layerId: string) => void;
   labels: FrameLabels & { frameInfo: string };
   emptyMessage: string;
   isPreview?: boolean;
+  showBlankCanvas?: boolean;
   isEyeDropperActive?: boolean;
   onColorPick?: (color: string) => void;
   gifTransparentColor?: string | null;
@@ -112,11 +120,17 @@ const EditableStat = ({
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({ 
   frame, 
   frameIndex, 
+  globalLayers = [],
+  layerTracks = [],
+  activeGlobalLayerId,
   config, 
   onUpdate, 
+  onSelectLayer,
+  onSelectGlobalLayer,
   labels, 
   emptyMessage, 
   isPreview,
+  showBlankCanvas,
   isEyeDropperActive,
   onColorPick,
   gifTransparentColor,
@@ -131,10 +145,22 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const [interaction, setInteraction] = useState<InteractionState | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [processedPreviewUrl, setProcessedPreviewUrl] = useState<string | null>(null);
+  const timelineFrameIndex = frameIndex ?? 0;
+  const frameLayers = frame ? getFrameLayers(frame) : [];
+  const activeFrameLayer = frame ? getActiveLayer(frame) : null;
+  const activeGlobalLayer = activeGlobalLayerId
+    ? [...globalLayers, ...flattenTrackLayers(layerTracks)].find(layer => layer.id === activeGlobalLayerId) ?? null
+    : null;
+  const activeLayer = activeGlobalLayer ?? activeFrameLayer;
+  const timelineLayers = [...globalLayers, ...flattenTrackLayers(layerTracks)];
+  const visibleGlobalLayers = timelineLayers
+    .map(layer => resolveLayerAtFrame(layer, timelineFrameIndex))
+    .filter((layer): layer is LayerData => Boolean(layer));
+  const activePreviewUrl = activeLayer?.source.previewUrl ?? frame?.previewUrl;
 
   // Process transparency preview
   useEffect(() => {
-    if (!frame || !isGifTransparentEnabled || !gifTransparentColor) {
+    if (!activePreviewUrl || !isGifTransparentEnabled || !gifTransparentColor) {
       setProcessedPreviewUrl(null);
       return;
     }
@@ -142,7 +168,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     let isActive = true;
     const img = new Image();
     img.crossOrigin = "Anonymous";
-    img.src = frame.previewUrl;
+    img.src = activePreviewUrl;
     
     img.onload = () => {
       if (!isActive) return;
@@ -176,7 +202,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => {
       isActive = false;
     };
-  }, [frame?.previewUrl, isGifTransparentEnabled, gifTransparentColor]);
+  }, [activePreviewUrl, isGifTransparentEnabled, gifTransparentColor]);
   const longPressTimer = useRef<any>(null);
 
   // Close context menu on click
@@ -221,16 +247,16 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   };
 
   const handleMenuAction = (action: string) => {
-    if (!frame) return;
+    if (!frame || !activeLayer) return;
     const updates: Partial<FrameData> = {};
     
     switch (action) {
       case 'center':
-        updates.x = Math.round((config.width - frame.width) / 2);
-        updates.y = Math.round((config.height - frame.height) / 2);
+        updates.x = Math.round((config.width - activeLayer.width) / 2);
+        updates.y = Math.round((config.height - activeLayer.height) / 2);
         break;
       case 'fit-contain':
-        const ratio = frame.width / frame.height;
+        const ratio = activeLayer.width / activeLayer.height;
         const canvasRatio = config.width / config.height;
         let newW, newH;
         if (ratio > canvasRatio) {
@@ -254,22 +280,22 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       case 'reset':
         updates.x = 0;
         updates.y = 0;
-        updates.width = frame.originalWidth;
-        updates.height = frame.originalHeight;
+        updates.width = activeLayer.source.originalWidth;
+        updates.height = activeLayer.source.originalHeight;
         updates.rotation = 0;
         break;
       case 'rotate':
-        const currentRotation = frame.rotation || 0;
+        const currentRotation = activeLayer.rotation || 0;
         const newRotation = (currentRotation + 90) % 360;
         updates.rotation = newRotation;
         
         // Swap width and height to maintain visual bounding box consistency
         // We rotate around the center
-        const cx = frame.x + frame.width / 2;
-        const cy = frame.y + frame.height / 2;
+        const cx = activeLayer.x + activeLayer.width / 2;
+        const cy = activeLayer.y + activeLayer.height / 2;
         
-        updates.width = frame.height;
-        updates.height = frame.width;
+        updates.width = activeLayer.height;
+        updates.height = activeLayer.width;
         updates.x = Math.round(cx - updates.width / 2);
         updates.y = Math.round(cy - updates.height / 2);
         break;
@@ -331,7 +357,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Handle Pointer Events
   const handlePointerDown = (e: React.PointerEvent, mode: InteractionMode) => {
-    if (!frame) return;
+    if (!frame || !activeLayer) return;
     e.preventDefault();
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -340,17 +366,17 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       mode,
       startPointerX: e.clientX,
       startPointerY: e.clientY,
-      startFrameX: frame.x,
-      startFrameY: frame.y,
-      startFrameW: frame.width,
-      startFrameH: frame.height,
-      ratio: frame.width / frame.height || 1,
+      startFrameX: activeLayer.x,
+      startFrameY: activeLayer.y,
+      startFrameW: activeLayer.width,
+      startFrameH: activeLayer.height,
+      ratio: activeLayer.width / activeLayer.height || 1,
       hasCommitted: false
     });
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!interaction || !frame) return;
+    if (!interaction || !frame || !activeLayer) return;
     e.preventDefault();
 
     const { 
@@ -544,10 +570,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const finalW = Math.round(newW);
     const finalH = Math.round(newH);
 
-    if (finalX !== Math.round(frame.x)) updates.x = finalX;
-    if (finalY !== Math.round(frame.y)) updates.y = finalY;
-    if (finalW !== Math.round(frame.width)) updates.width = finalW;
-    if (finalH !== Math.round(frame.height)) updates.height = finalH;
+    if (finalX !== Math.round(activeLayer.x)) updates.x = finalX;
+    if (finalY !== Math.round(activeLayer.y)) updates.y = finalY;
+    if (finalW !== Math.round(activeLayer.width)) updates.width = finalW;
+    if (finalH !== Math.round(activeLayer.height)) updates.height = finalH;
 
     if (Object.keys(updates).length > 0) {
        const shouldCommit = !interaction.hasCommitted;
@@ -568,7 +594,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Keyboard navigation for fine-tuning
   useEffect(() => {
-    if (!frame) return;
+    if (!frame || !activeLayer) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement instanceof HTMLInputElement || 
@@ -590,14 +616,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       e.preventDefault();
       onUpdate({
-        x: Math.round(frame.x + dx),
-        y: Math.round(frame.y + dy)
+        x: Math.round(activeLayer.x + dx),
+        y: Math.round(activeLayer.y + dy)
       }, true);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [frame, onUpdate]);
+  }, [frame, activeLayer, onUpdate]);
 
   const rgbToHex = (r: number, g: number, b: number) => {
     return ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
@@ -641,14 +667,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
   };
 
-  if (!frame) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-gray-900 border-b border-gray-800 text-gray-500 text-sm">
-        {emptyMessage}
-      </div>
-    );
-  }
-
   const canvasStyle = {
     width: config.width * scale,
     height: config.height * scale,
@@ -658,11 +676,33 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     backgroundPosition: '0 0'
   };
 
+  if (!frame) {
+    if (showBlankCanvas) {
+      return (
+        <div
+          ref={containerRef}
+          className="flex-1 bg-gray-950 relative overflow-hidden flex items-center justify-center p-4 md:p-8 select-none touch-none"
+        >
+          <div
+            className="relative shadow-2xl box-content border border-gray-700"
+            style={canvasStyle}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gray-900 border-b border-gray-800 text-gray-500 text-sm">
+        {emptyMessage}
+      </div>
+    );
+  }
+
   const frameStyle = {
-    left: frame.x * scale,
-    top: frame.y * scale,
-    width: frame.width * scale,
-    height: frame.height * scale,
+    left: (activeLayer?.x ?? frame.x) * scale,
+    top: (activeLayer?.y ?? frame.y) * scale,
+    width: (activeLayer?.width ?? frame.width) * scale,
+    height: (activeLayer?.height ?? frame.height) * scale,
   };
 
   return (
@@ -675,36 +715,67 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         className="relative shadow-2xl box-content border border-gray-700" 
         style={canvasStyle}
       >
-        {/* Frame Image */}
+        {/* Frame Layers */}
+        {[...frameLayers, ...visibleGlobalLayers].map((layer) => {
+          const isActiveLayer = layer.id === activeLayer?.id;
+          const layerStyle: React.CSSProperties = {
+            left: layer.x * scale,
+            top: layer.y * scale,
+            width: layer.width * scale,
+            height: layer.height * scale,
+            opacity: layer.opacity,
+            mixBlendMode: layer.blendMode as React.CSSProperties['mixBlendMode'],
+            pointerEvents: isActiveLayer ? 'auto' : 'none',
+          };
+
+          if (!layer.visible) return null;
+
+          return (
+            <div
+              key={layer.id}
+              className={`absolute ${isActiveLayer && isEyeDropperActive ? 'cursor-crosshair' : 'cursor-move'} touch-none ${interaction || isPreview ? '' : 'transition-all duration-200 ease-out'}`}
+              style={layerStyle}
+              onPointerDown={(e) => isActiveLayer && !isPreview && !isEyeDropperActive && !layer.locked && handlePointerDown(e, 'move')}
+              onPointerMove={isActiveLayer && !isPreview && !isEyeDropperActive && !layer.locked ? handlePointerMove : undefined}
+              onPointerUp={isActiveLayer && !isPreview && !isEyeDropperActive && !layer.locked ? handlePointerUp : undefined}
+              onContextMenu={isActiveLayer && !isPreview && !isEyeDropperActive ? handleContextMenu : undefined}
+              onTouchStart={isActiveLayer ? handleTouchStart : undefined}
+              onTouchEnd={isActiveLayer ? handleTouchEnd : undefined}
+              onTouchMove={isActiveLayer ? handleTouchMove : undefined}
+            >
+              <img
+                src={isActiveLayer ? (processedPreviewUrl || layer.source.previewUrl) : layer.source.previewUrl}
+                alt={layer.name}
+                className={`absolute ${isActiveLayer && isEyeDropperActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                style={{
+                  width: (layer.rotation || 0) % 180 === 90 ? `${layer.height * scale}px` : '100%',
+                  height: (layer.rotation || 0) % 180 === 90 ? `${layer.width * scale}px` : '100%',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate(-50%, -50%) rotate(${layer.rotation || 0}deg)`,
+                  objectFit: 'fill',
+                  transition: interaction || isPreview ? 'none' : 'all 0.2s ease-out'
+                }}
+                onClick={isActiveLayer ? handleImageClick : undefined}
+              />
+            </div>
+          );
+        })}
+
+        {/* Active Layer Controls */}
         <div 
           className={`absolute group ${isEyeDropperActive ? 'cursor-crosshair' : 'cursor-move'} touch-none ${interaction || isPreview ? '' : 'transition-all duration-200 ease-out'}`}
-          style={frameStyle}
-          onPointerDown={(e) => !isPreview && !isEyeDropperActive && handlePointerDown(e, 'move')}
-          onPointerMove={!isPreview && !isEyeDropperActive ? handlePointerMove : undefined}
-          onPointerUp={!isPreview && !isEyeDropperActive ? handlePointerUp : undefined}
+          style={{ ...frameStyle, pointerEvents: isEyeDropperActive ? 'none' : 'auto' }}
+          onPointerDown={(e) => !isPreview && !isEyeDropperActive && !activeLayer?.locked && handlePointerDown(e, 'move')}
+          onPointerMove={!isPreview && !isEyeDropperActive && !activeLayer?.locked ? handlePointerMove : undefined}
+          onPointerUp={!isPreview && !isEyeDropperActive && !activeLayer?.locked ? handlePointerUp : undefined}
           onContextMenu={!isPreview && !isEyeDropperActive ? handleContextMenu : undefined}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
         >
-          <img 
-            src={processedPreviewUrl || frame.previewUrl} 
-            alt="frame" 
-            className={`absolute ${isEyeDropperActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
-            style={{
-                width: (frame.rotation || 0) % 180 === 90 ? `${frame.height * scale}px` : '100%',
-                height: (frame.rotation || 0) % 180 === 90 ? `${frame.width * scale}px` : '100%',
-                left: '50%',
-                top: '50%',
-                transform: `translate(-50%, -50%) rotate(${frame.rotation || 0}deg)`,
-                objectFit: 'fill',
-                transition: interaction || isPreview ? 'none' : 'all 0.2s ease-out'
-            }}
-            onClick={handleImageClick}
-          />
-
           {/* Resize Handles & Border */}
-          {!isPreview && !isEyeDropperActive && (
+          {!isPreview && !isEyeDropperActive && !activeLayer?.locked && (
             <>
               {/* Border */}
               <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />
@@ -749,6 +820,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         </div>
       </div>
       
+
       {/* Persistent Frame Stats Bar */}
       <div 
         onClick={() => setIsStatsExpanded(!isStatsExpanded)}
@@ -799,25 +871,25 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             <div className="w-full h-px bg-gray-700 my-1"></div>
             <EditableStat 
               label={labels.x} 
-              value={Math.round(frame.x)} 
+              value={Math.round(activeLayer?.x ?? frame.x)} 
               onChange={(val) => onUpdate({ x: val }, true)} 
             />
             <div className="w-full h-px bg-gray-700 my-1"></div>
             <EditableStat 
               label={labels.y} 
-              value={Math.round(frame.y)} 
+              value={Math.round(activeLayer?.y ?? frame.y)} 
               onChange={(val) => onUpdate({ y: val }, true)} 
             />
             <div className="w-full h-px bg-gray-700 my-1"></div>
             <EditableStat 
               label={labels.w} 
-              value={Math.round(frame.width)} 
+              value={Math.round(activeLayer?.width ?? frame.width)} 
               onChange={(val) => onUpdate({ width: val }, true)} 
             />
             <div className="w-full h-px bg-gray-700 my-1"></div>
             <EditableStat 
               label={labels.h} 
-              value={Math.round(frame.height)} 
+              value={Math.round(activeLayer?.height ?? frame.height)} 
               onChange={(val) => onUpdate({ height: val }, true)} 
             />
         </div>

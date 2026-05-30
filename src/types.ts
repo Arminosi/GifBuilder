@@ -4,6 +4,7 @@ export interface FrameData {
   id: string;
   file: File;
   previewUrl: string;
+  startTime?: number; // optional timeline position in milliseconds within its track
   duration: number; // in milliseconds
   x: number;
   y: number;
@@ -13,6 +14,66 @@ export interface FrameData {
   colorTag?: string; // hex color code
   originalWidth: number;
   originalHeight: number;
+  layers?: LayerData[];
+  activeLayerId?: string;
+}
+
+export type LayerType = 'image';
+
+export interface LayerKeyframe {
+  frame: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  opacity?: number;
+  visible?: boolean;
+}
+
+export interface ImageLayerSource {
+  file?: File;
+  previewUrl: string;
+  originalWidth: number;
+  originalHeight: number;
+  name?: string;
+}
+
+export interface LayerData {
+  id: string;
+  name: string;
+  type: LayerType;
+  visible: boolean;
+  locked: boolean;
+  startFrame: number;
+  endFrame: number | null;
+  opacity: number;
+  blendMode?: GlobalCompositeOperation;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  source: ImageLayerSource;
+  keyframes?: LayerKeyframe[];
+}
+
+export interface LayerTrack {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  opacity: number;
+  clips: LayerData[];
+}
+
+export interface FrameTrack {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  opacity: number;
+  frames: FrameData[];
 }
 
 export interface CanvasConfig {
@@ -44,6 +105,10 @@ export interface HistorySnapshot {
   timestamp: number;
   name: string;
   frames: FrameData[];
+  frameTracks?: FrameTrack[];
+  activeFrameTrackId?: string;
+  globalLayers?: LayerData[];
+  layerTracks?: LayerTrack[];
   canvasConfig: CanvasConfig;
   thumbnail?: string; // Optional generated animation blob URL
   format?: 'gif' | 'apng' | 'webp';

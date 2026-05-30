@@ -5,6 +5,7 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import { FrameData } from '../types';
 import { FrameItem } from './FrameItem';
 import { FrameLabels } from '../utils/translations';
+import { getTrackFrameSegments } from '../utils/frameTrackTiming';
 
 export interface VirtualFrameListHandle {
   scrollToItem: (index: number) => void;
@@ -54,7 +55,8 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     isLayoutAnimating,
     isHorizontal,
     transparentColor,
-    isTransparentEnabled
+    isTransparentEnabled,
+    gapBeforeByIndex
   } = data;
 
   const startIndex = index * columnCount;
@@ -79,7 +81,16 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             width: frameWidth, 
             height: itemHeight - GAP, // Subtract gap from height to maintain spacing
           }}
+          className="relative"
         >
+          {gapBeforeByIndex[startIndex + i] > 0 && (
+            <div
+              className={`pointer-events-none absolute z-20 whitespace-nowrap rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 shadow-sm ${i === 0 ? 'left-1 top-1' : '-left-2 top-1 -translate-x-full'}`}
+              title={`Empty gap: ${gapBeforeByIndex[startIndex + i]}ms`}
+            >
+              空白 {gapBeforeByIndex[startIndex + i]}ms
+            </div>
+          )}
           <FrameItem
             frame={frame}
             index={startIndex + i}
@@ -191,6 +202,12 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
           } 
 
           const rowCount = Math.ceil(frames.length / safeColumnCount);
+          const trackSegments = getTrackFrameSegments(frames);
+          const gapBeforeByIndex = trackSegments.map((segment, index) => {
+            if (index === 0) return 0;
+            const previous = trackSegments[index - 1];
+            return Math.max(0, segment.start - previous.end);
+          });
 
           return (
             <List
@@ -219,7 +236,8 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 isLayoutAnimating,
                 isHorizontal,
                 transparentColor,
-                isTransparentEnabled
+                isTransparentEnabled,
+                gapBeforeByIndex
               }}
             >
               {Row}

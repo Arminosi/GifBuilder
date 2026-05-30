@@ -1,6 +1,8 @@
 
-import { FrameData, CanvasConfig } from '../types';
+import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
 import GIF from 'gif.js';
+import { createCompositionTimeline } from './frameTrackTiming';
+import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
 
 // Cache the worker blob URL to avoid fetching it every time
 let workerBlobUrl: string | null = null;
@@ -427,7 +429,10 @@ export const generateGIF = async (
   targetSizeMB?: number,
   onStatus?: (status: string) => void,
   texts?: StatusTexts,
-  customTransparentColor?: string | null
+  customTransparentColor?: string | null,
+  globalLayers: LayerData[] = [],
+  layerTracks: LayerTrack[] = [],
+  frameTracks: FrameTrack[] = []
 ): Promise<Blob> => {
 
   const t = texts || {
@@ -440,10 +445,20 @@ export const generateGIF = async (
     completed: "Generation complete!"
   };
 
+  const firstTrackFrame = frameTracks.flatMap(track => track.frames)[0];
+  const compositionSegments = frameTracks.length > 0 && (frames[0] || firstTrackFrame) ? createCompositionTimeline(frameTracks, frames) : null;
+  const sourceFrames = compositionSegments
+    ? compositionSegments.map((segment, index) => ({
+      ...(frames[0] ?? firstTrackFrame),
+      id: `composition-${index}`,
+      duration: segment.duration,
+    }))
+    : frames;
+
   // Apply frame deduplication to reduce file size (enabled by default)
   const enableDeduplication = config.enableFrameDeduplication !== false;
   if (onStatus && enableDeduplication) onStatus("Optimizing frames...");
-  const optimizedFrames = enableDeduplication ? deduplicateFrames(frames) : frames;
+  const optimizedFrames = enableDeduplication && !compositionSegments ? deduplicateFrames(sourceFrames) : sourceFrames;
 
   // Use optimized frames for generation
   const framesToProcess = optimizedFrames;
@@ -520,156 +535,38 @@ export const generateGIF = async (
 
         // Color smoothing state
         let prevFrameColors: Map<number, number> | null = null;
+        const imageCache = new Map<string, HTMLImageElement>();
 
         for (let i = 0; i < framesToProcess.length; i++) {
           const frame = framesToProcess[i];
           if (onStatus) onStatus(`${statusPrefix}${format(t.processingFrameN, i + 1, framesToProcess.length)}`);
 
-          // Detect if this frame has transparency
-          let hasFrameTransparency = false;
-          let cachedImageData: ImageData | undefined = undefined;
           const alphaThreshold = currentConfig.alphaThreshold ?? 128;
 
-          if (currentConfig.transparent && globalTransparentKey) {
-            // Check if this frame has transparency
-            const result = await findUnusedColorForFrame(frame.previewUrl, i, alphaThreshold);
-            hasFrameTransparency = result.hasTransparency;
-            cachedImageData = result.imageData;
-          }
-
           try {
-            const img = await loadImage(frame.previewUrl);
+            const renderOptions = {
+              timelineFrameIndex: i,
+              timelineTimeMs: compositionSegments?.[i]?.start,
+              sourceCanvasWidth: config.width,
+              sourceCanvasHeight: config.height,
+              imageCache,
+              transparentKey: currentConfig.transparent && globalTransparentKey
+                ? {
+                  str: globalTransparentKey.str,
+                  hex: globalTransparentKey.hex,
+                  alphaThreshold,
+                }
+                : null,
+            };
 
-            // Clear canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Handle background
-            if (currentConfig.transparent && globalTransparentKey) {
-              // If transparent mode, fill with global transparent key color first
-              ctx.fillStyle = globalTransparentKey.str;
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (frameTracks.length > 0) {
+              await renderFrameTracksToCanvas(frameTracks, frame, currentConfig, ctx, renderOptions);
             } else {
-              // Otherwise fill with user selected background color
-              ctx.fillStyle = currentConfig.backgroundColor || '#ffffff';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-            }
-
-            // Draw background image if present
-            if (currentConfig.backgroundImage && !currentConfig.transparent) {
-              try {
-                const bgImg = await loadImage(currentConfig.backgroundImage);
-                const scaleX = currentConfig.width / config.width;
-                const scaleY = currentConfig.height / config.height;
-
-                const bgX = (currentConfig.backgroundImageX || 0) * scaleX;
-                const bgY = (currentConfig.backgroundImageY || 0) * scaleY;
-                const bgWidth = (currentConfig.backgroundImageDisplayWidth || currentConfig.width) * scaleX;
-                const bgHeight = (currentConfig.backgroundImageDisplayHeight || currentConfig.height) * scaleY;
-
-                ctx.drawImage(bgImg, bgX, bgY, bgWidth, bgHeight);
-              } catch (e) {
-                console.warn("Failed to draw background image", e);
-              }
-            }
-
-            // Prepare image to draw (handle transparency properly)
-            let imageToDraw: CanvasImageSource = img;
-
-            // Process transparency to preserve alpha channel information
-            // Only process if frame actually has transparency
-            if (currentConfig.transparent && globalTransparentKey && hasFrameTransparency) {
-              // Create temp canvas to process image transparency
-              const tempCanvas = document.createElement('canvas');
-              tempCanvas.width = img.width;
-              tempCanvas.height = img.height;
-              const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-              if (tempCtx) {
-                let imageData: ImageData;
-
-                // Reuse cached imageData if available (from transparency detection)
-                if (cachedImageData && cachedImageData.width === img.width && cachedImageData.height === img.height) {
-                  // Clone the cached imageData to avoid modifying the original
-                  imageData = new ImageData(
-                    new Uint8ClampedArray(cachedImageData.data),
-                    cachedImageData.width,
-                    cachedImageData.height
-                  );
-                } else {
-                  // Load image data if not cached
-                  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-                  tempCtx.drawImage(img, 0, 0);
-                  imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                }
-
-                const data = imageData.data;
-
-                // Replace transparent/semi-transparent pixels with the transparency key color
-                // Keep opaque pixels as-is to preserve their original colors
-                for (let k = 0; k < data.length; k += 4) {
-                  const alpha = data[k + 3];
-
-                  if (alpha < alphaThreshold) {
-                    // Transparent or semi-transparent pixel: replace with global key color and make fully transparent
-                    data[k] = (globalTransparentKey.hex >> 16) & 0xFF;     // R
-                    data[k + 1] = (globalTransparentKey.hex >> 8) & 0xFF;  // G
-                    data[k + 2] = globalTransparentKey.hex & 0xFF;         // B
-                    data[k + 3] = 0;  // Fully transparent
-                  } else if (alpha < 255) {
-                    // Semi-transparent pixel that's above threshold
-                    // Keep the color but make it fully opaque
-                    // This preserves anti-aliasing edges better
-                    data[k + 3] = 255;
-                  }
-                  // Fully opaque pixels (alpha === 255) are kept as-is
-                }
-
-                tempCtx.putImageData(imageData, 0, 0);
-                imageToDraw = tempCanvas;
-              }
-            } else if (customTransparentColor) {
-              // Custom transparent color mode (legacy behavior)
-              const tempCanvas = document.createElement('canvas');
-              tempCanvas.width = img.width;
-              tempCanvas.height = img.height;
-              const tempCtx = tempCanvas.getContext('2d');
-              if (tempCtx) {
-                tempCtx.drawImage(img, 0, 0);
-                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                const data = imageData.data;
-                const rTarget = parseInt(customTransparentColor.slice(1, 3), 16);
-                const gTarget = parseInt(customTransparentColor.slice(3, 5), 16);
-                const bTarget = parseInt(customTransparentColor.slice(5, 7), 16);
-
-                for (let k = 0; k < data.length; k += 4) {
-                  if (data[k] === rTarget && data[k + 1] === gTarget && data[k + 2] === bTarget) {
-                    data[k + 3] = 0;
-                  }
-                }
-                tempCtx.putImageData(imageData, 0, 0);
-                imageToDraw = tempCanvas;
-              }
-            }
-
-            // Draw image at specified position and size
-            // We need to scale the frame position/size if the canvas size has changed (for compression)
-            const scaleX = currentConfig.width / config.width;
-            const scaleY = currentConfig.height / config.height;
-
-            if (frame.rotation) {
-              ctx.save();
-              const cx = (frame.x + frame.width / 2) * scaleX;
-              const cy = (frame.y + frame.height / 2) * scaleY;
-              ctx.translate(cx, cy);
-              ctx.rotate((frame.rotation * Math.PI) / 180);
-
-              if (Math.abs(frame.rotation % 180) === 90) {
-                ctx.drawImage(imageToDraw, (-frame.height / 2) * scaleX, (-frame.width / 2) * scaleY, frame.height * scaleX, frame.width * scaleY);
-              } else {
-                ctx.drawImage(imageToDraw, (-frame.width / 2) * scaleX, (-frame.height / 2) * scaleY, frame.width * scaleX, frame.height * scaleY);
-              }
-              ctx.restore();
-            } else {
-              ctx.drawImage(imageToDraw, frame.x * scaleX, frame.y * scaleY, frame.width * scaleX, frame.height * scaleY);
+              await renderFrameToCanvas(frame, currentConfig, ctx, {
+                ...renderOptions,
+                globalLayers,
+                layerTracks,
+              });
             }
 
             // Apply color smoothing if enabled

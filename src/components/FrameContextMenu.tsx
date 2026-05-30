@@ -6,6 +6,7 @@ import {
   Copy,
   Download,
   FilePlus,
+  Layers,
   Maximize,
   ArrowDownUp,
   RotateCcw,
@@ -23,6 +24,11 @@ interface FrameContextMenuProps {
   onCopy: () => void;
   onPaste: () => void;
   onDuplicate: () => void;
+  canMergeSelectedAsLayers: boolean;
+  mergeAsLayersLabel: string;
+  onMergeSelectedAsLayers: () => void;
+  addTimelineLayersLabel: string;
+  onAddTimelineLayers: () => void;
   onInsert: () => void;
   onReverseSelected: () => void;
   onAlignCenter: () => void;
@@ -45,6 +51,11 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
   onCopy,
   onPaste,
   onDuplicate,
+  canMergeSelectedAsLayers,
+  mergeAsLayersLabel,
+  onMergeSelectedAsLayers,
+  addTimelineLayersLabel,
+  onAddTimelineLayers,
   onInsert,
   onReverseSelected,
   onAlignCenter,
@@ -91,6 +102,14 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
       >
         <Copy size={14} />
         {labels.duplicateHere}
+      </button>
+      <button
+        className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white flex items-center gap-2 transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+        onClick={onAddTimelineLayers}
+        disabled={!canMergeSelectedAsLayers}
+      >
+        <Layers size={14} />
+        {addTimelineLayersLabel}
       </button>
       <button
         className={menuButtonClass}

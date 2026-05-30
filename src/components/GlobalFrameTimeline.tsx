@@ -5,8 +5,12 @@ const CONTROL_PANEL_DOCK_THRESHOLD = 18;
 
 interface GlobalFrameTimelineProps {
   frames: FrameData[];
+  timelineFrames?: FrameData[];
+  currentFrameIndex?: number;
+  currentTimeMs?: number;
   selectedFrameIds: Set<string>;
   onSelectFrame: (index: number) => void;
+  onSelectTime?: (timeMs: number) => void;
   exportInFrameIndex?: number | null;
   exportOutFrameIndex?: number | null;
   isLargeScreen: boolean;
@@ -25,8 +29,12 @@ interface GlobalFrameTimelineProps {
 
 export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
   frames,
+  timelineFrames,
+  currentFrameIndex,
+  currentTimeMs,
   selectedFrameIds,
   onSelectFrame,
+  onSelectTime,
   exportInFrameIndex,
   exportOutFrameIndex,
   isLargeScreen,
@@ -66,8 +74,11 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
     return () => clearControlPanelHideTimer();
   }, []);
 
+  const displayFrames = timelineFrames && timelineFrames.length > 0 ? timelineFrames : frames;
+  const frameCount = Math.max(1, displayFrames.length);
+
   const timeline = useMemo(() => {
-    const durations = frames.map(frame => Math.max(1, frame.duration || 1));
+    const durations = displayFrames.length > 0 ? displayFrames.map(frame => Math.max(1, frame.duration || 1)) : [1];
     const totalDuration = durations.reduce((sum, duration) => sum + duration, 0);
     const starts: number[] = [];
     let cursor = 0;
@@ -78,18 +89,21 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
     });
 
     return { durations, starts, totalDuration };
-  }, [frames]);
+  }, [displayFrames]);
 
-  const selectedIndex = frames.findIndex(frame => selectedFrameIds.has(frame.id));
-  const selectedStart = selectedIndex >= 0 ? timeline.starts[selectedIndex] : 0;
-  const selectedDuration = selectedIndex >= 0 ? timeline.durations[selectedIndex] : 0;
+  const selectedFrameIndex = frames.findIndex(frame => selectedFrameIds.has(frame.id));
+  const selectedIndex = selectedFrameIndex >= 0
+    ? selectedFrameIndex
+    : Math.min(frameCount - 1, Math.max(0, currentFrameIndex ?? 0));
+  const selectedStart = typeof currentTimeMs === 'number' ? currentTimeMs : (selectedIndex >= 0 ? timeline.starts[selectedIndex] : 0);
+  const selectedDuration = typeof currentTimeMs === 'number' ? 0 : (selectedIndex >= 0 ? timeline.durations[selectedIndex] : 0);
   const selectedPercent = timeline.totalDuration > 0
     ? ((selectedStart + selectedDuration / 2) / timeline.totalDuration) * 100
     : 0;
-  const exportInIndex = typeof exportInFrameIndex === 'number' && exportInFrameIndex >= 0 && exportInFrameIndex < frames.length
+  const exportInIndex = typeof exportInFrameIndex === 'number' && exportInFrameIndex >= 0 && exportInFrameIndex < frameCount
     ? exportInFrameIndex
     : null;
-  const exportOutIndex = typeof exportOutFrameIndex === 'number' && exportOutFrameIndex >= 0 && exportOutFrameIndex < frames.length
+  const exportOutIndex = typeof exportOutFrameIndex === 'number' && exportOutFrameIndex >= 0 && exportOutFrameIndex < frameCount
     ? exportOutFrameIndex
     : null;
   const hasExportIn = exportInIndex !== null;
@@ -97,7 +111,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
   const hasExportRange = hasExportIn || hasExportOut;
   const isInvalidExportRange = exportInIndex !== null && exportOutIndex !== null && exportInIndex > exportOutIndex;
   const exportStartIndex = exportInIndex ?? 0;
-  const exportEndIndex = exportOutIndex ?? frames.length - 1;
+  const exportEndIndex = exportOutIndex ?? frameCount - 1;
   const visualStartIndex = Math.min(exportStartIndex, exportEndIndex);
   const visualEndIndex = Math.max(exportStartIndex, exportEndIndex);
   const getFrameStartPercent = (index: number) => timeline.totalDuration > 0
@@ -113,7 +127,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
 
   const getFrameIndexFromPointer = (clientX: number) => {
     const track = trackRef.current;
-    if (!track || frames.length === 0 || timeline.totalDuration <= 0) return null;
+    if (!track || timeline.totalDuration <= 0) return null;
 
     const rect = track.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
@@ -123,7 +137,16 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
       return targetTime >= start && targetTime < end;
     });
 
-    return index === -1 ? frames.length - 1 : index;
+    return index === -1 ? frameCount - 1 : index;
+  };
+
+  const getTimeFromPointer = (clientX: number) => {
+    const track = trackRef.current;
+    if (!track || timeline.totalDuration <= 0) return null;
+
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return Math.round(ratio * timeline.totalDuration);
   };
 
   const pickFrameFromPointer = (clientX: number) => {
@@ -131,7 +154,13 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
     if (safeIndex === null) return null;
 
     setHoverIndex(safeIndex);
-    onSelectFrame(safeIndex);
+    const targetTime = getTimeFromPointer(clientX);
+    if (targetTime !== null) {
+      onSelectTime?.(targetTime);
+    }
+    if (!onSelectTime) {
+      onSelectFrame(safeIndex);
+    }
     return safeIndex;
   };
 
@@ -147,7 +176,13 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
 
     if (targetIndex !== null) {
       setHoverIndex(targetIndex);
-      onSelectFrame(targetIndex);
+      const targetTime = getTimeFromPointer(event.clientX);
+      if (targetTime !== null) {
+        onSelectTime?.(targetTime);
+      }
+      if (!onSelectTime) {
+        onSelectFrame(targetIndex);
+      }
     }
   };
 
@@ -175,9 +210,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
     scheduleControlPanelHide();
   };
 
-  if (frames.length === 0) return null;
-
-  const hasSelectedFrame = selectedIndex >= 0;
+  const hasSelectedFrame = selectedFrameIndex >= 0;
   const showControls = isControlPanelOpen && hasSelectedFrame;
   const selectedCount = selectedFrameIds.size;
   const panelLeft = selectedPercent <= CONTROL_PANEL_DOCK_THRESHOLD
@@ -232,7 +265,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
         role="slider"
         aria-label={label}
         aria-valuemin={1}
-        aria-valuemax={frames.length}
+        aria-valuemax={frameCount}
         aria-valuenow={selectedIndex >= 0 ? selectedIndex + 1 : 1}
         tabIndex={0}
         onPointerDown={handlePointerDown}
@@ -252,7 +285,7 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
           />
         )}
         <div className="flex h-full overflow-hidden rounded bg-gray-800">
-          {frames.map((frame, index) => {
+          {displayFrames.length > 0 ? displayFrames.map((frame, index) => {
             const width = `${(timeline.durations[index] / timeline.totalDuration) * 100}%`;
             const isSelected = index === selectedIndex;
             const isHovered = index === hoverIndex;
@@ -273,7 +306,9 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
                 )}
               </div>
             );
-          })}
+          }) : (
+            <div className="h-full w-full bg-gray-700" title="Empty timeline" />
+          )}
         </div>
 
         {selectedIndex >= 0 && (

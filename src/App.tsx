@@ -3,7 +3,7 @@ import { ImagePlus, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
-import { FrameData, CanvasConfig, HistorySnapshot, PendingVideoImport, FrameContextMenuState } from './types';
+import { FrameData, CanvasConfig, HistorySnapshot, PendingVideoImport, FrameContextMenuState, LayerData, LayerTrack, FrameTrack } from './types';
 import { FrameCard } from './components/FrameItem';
 import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { FileDropOverlay } from './components/FileDropOverlay';
@@ -15,6 +15,9 @@ import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
 import { generateAPNG } from './utils/apngHelper';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
+import { cloneFrameWithNewIds, createFrameFromImage, createImageLayer, createLayerTrack, flattenTrackLayers, getFrameLayers, syncFrameFromActiveLayer, updateFrameActiveLayer } from './utils/layerHelpers';
+import { renderFrameToCanvas, renderFrameTracksToCanvas } from './utils/layerRenderer';
+import { createCompositionTimeline, findFrameAtTime, getFrameStartTime, getTimelineSegmentIndexAtTime } from './utils/frameTrackTiming';
 import { translations, Language } from './utils/translations';
 import {
   saveSnapshotToDB,
@@ -132,15 +135,75 @@ const DITHER_OPTIONS: Array<{
 
 interface AppState {
   frames: FrameData[];
+  frameTracks: FrameTrack[];
+  activeFrameTrackId: string | null;
+  globalLayers: LayerData[];
+  layerTracks: LayerTrack[];
   canvasConfig: CanvasConfig;
 }
+
+const createDefaultFrameTrack = (frames: FrameData[] = []): FrameTrack => ({
+  id: 'track-main',
+  name: 'Track 1',
+  visible: true,
+  locked: false,
+  opacity: 1,
+  frames,
+});
+
+const normalizeTrackState = (state: AppState): AppState => {
+  if (state.frameTracks && state.frameTracks.length > 0) {
+    const activeFrameTrackId = state.activeFrameTrackId && state.frameTracks.some(track => track.id === state.activeFrameTrackId)
+      ? state.activeFrameTrackId
+      : state.frameTracks[0].id;
+    const activeTrack = state.frameTracks.find(track => track.id === activeFrameTrackId);
+    return {
+      ...state,
+      activeFrameTrackId,
+      frames: activeTrack?.frames ?? [],
+      globalLayers: state.globalLayers ?? [],
+      layerTracks: state.layerTracks ?? [],
+    };
+  }
+
+  const defaultTrack = createDefaultFrameTrack(state.frames ?? []);
+  return {
+    ...state,
+    frameTracks: [defaultTrack],
+    activeFrameTrackId: defaultTrack.id,
+    frames: defaultTrack.frames,
+    globalLayers: state.globalLayers ?? [],
+    layerTracks: state.layerTracks ?? [],
+  };
+};
+
+const syncActiveTrackFrames = (state: AppState): AppState => {
+  const frameTracks = state.frameTracks && state.frameTracks.length > 0
+    ? state.frameTracks
+    : [createDefaultFrameTrack(state.frames ?? [])];
+  const activeFrameTrackId = state.activeFrameTrackId && frameTracks.some(track => track.id === state.activeFrameTrackId)
+    ? state.activeFrameTrackId
+    : frameTracks[0].id;
+  const activeFrames = state.frames ?? frameTracks.find(track => track.id === activeFrameTrackId)?.frames ?? [];
+
+  return {
+    ...state,
+    activeFrameTrackId,
+    frames: activeFrames,
+    frameTracks: frameTracks.map(track => (
+      track.id === activeFrameTrackId ? { ...track, frames: activeFrames } : track
+    )),
+    globalLayers: state.globalLayers ?? [],
+    layerTracks: state.layerTracks ?? [],
+  };
+};
 
 const App: React.FC = () => {
   // Use custom history hook for Undo/Redo
   const {
     state: appState,
-    setState: setAppState,
-    overwrite: overwriteAppState,
+    setState: setHistoryAppState,
+    overwrite: overwriteHistoryAppState,
     undo,
     redo,
     canUndo,
@@ -150,11 +213,46 @@ const App: React.FC = () => {
     jumpTo: jumpToHistory
   } = useHistory<AppState>({
     frames: [],
+    frameTracks: [createDefaultFrameTrack()],
+    activeFrameTrackId: 'track-main',
+    globalLayers: [],
+    layerTracks: [],
     canvasConfig: INITIAL_CANVAS_CONFIG
   });
 
+  const setAppState = useCallback((
+    newState: AppState | ((prev: AppState) => AppState),
+    description?: string
+  ) => {
+    setHistoryAppState(prev => {
+      const normalizedPrev = normalizeTrackState(prev);
+      const resolved = typeof newState === 'function'
+        ? (newState as (prev: AppState) => AppState)(normalizedPrev)
+        : newState;
+      return syncActiveTrackFrames(resolved);
+    }, description);
+  }, [setHistoryAppState]);
+
+  const overwriteAppState = useCallback((newState: AppState | ((prev: AppState) => AppState)) => {
+    overwriteHistoryAppState(prev => {
+      const normalizedPrev = normalizeTrackState(prev);
+      const resolved = typeof newState === 'function'
+        ? (newState as (prev: AppState) => AppState)(normalizedPrev)
+        : newState;
+      return syncActiveTrackFrames(resolved);
+    });
+  }, [overwriteHistoryAppState]);
+
   // Safe destructuring with fallback
-  const { frames, canvasConfig } = appState || { frames: [], canvasConfig: INITIAL_CANVAS_CONFIG };
+  const normalizedAppState = normalizeTrackState(appState || {
+    frames: [],
+    frameTracks: [createDefaultFrameTrack()],
+    activeFrameTrackId: 'track-main',
+    globalLayers: [],
+    layerTracks: [],
+    canvasConfig: INITIAL_CANVAS_CONFIG
+  });
+  const { frames, frameTracks, activeFrameTrackId, globalLayers, layerTracks, canvasConfig } = normalizedAppState;
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
@@ -207,6 +305,8 @@ const App: React.FC = () => {
 
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
+  const [selectedGlobalLayerId, setSelectedGlobalLayerId] = useState<string | null>(null);
+  const [selectedLayerTrackId, setSelectedLayerTrackId] = useState<string | null>(null);
   const [isBatchSelectMode, setIsBatchSelectMode] = useState(false);
   const [batchInputValues, setBatchInputValues] = useState<{
     x: string;
@@ -272,6 +372,7 @@ const App: React.FC = () => {
   // Preview State
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewFrameIndex, setPreviewFrameIndex] = useState<number | null>(null);
+  const [previewTimeMs, setPreviewTimeMs] = useState<number | null>(null);
   const [syncPreviewSelection, setSyncPreviewSelection] = useState(true);
   const [exportInFrameIndex, setExportInFrameIndex] = useState<number | null>(null);
   const [exportOutFrameIndex, setExportOutFrameIndex] = useState<number | null>(null);
@@ -386,7 +487,47 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isPlaying || frames.length === 0) {
       setPreviewFrameIndex(null);
+      setPreviewTimeMs(null);
       return;
+    }
+
+    if (frameTracks.length > 0) {
+      const timeline = createCompositionTimeline(frameTracks, frames);
+      let currentSegmentIndex = selectedFrameIdsRef.current.size > 0
+        ? getTimelineSegmentIndexAtTime(timeline, getFrameStartTime(frames, frames.findIndex(f => selectedFrameIdsRef.current.has(f.id))))
+        : 0;
+
+      if (currentSegmentIndex < 0) currentSegmentIndex = 0;
+      setPreviewFrameIndex(currentSegmentIndex);
+      setPreviewTimeMs(timeline[currentSegmentIndex]?.start ?? 0);
+
+      let timeoutId: ReturnType<typeof setTimeout>;
+
+      const playNextSegment = () => {
+        const segment = timeline[currentSegmentIndex] ?? timeline[0];
+        timeoutId = setTimeout(() => {
+          if (!isPlaying) return;
+          currentSegmentIndex = (currentSegmentIndex + 1) % timeline.length;
+          const nextSegment = timeline[currentSegmentIndex] ?? timeline[0];
+          setPreviewFrameIndex(currentSegmentIndex);
+          setPreviewTimeMs(nextSegment.start);
+
+          if (syncPreviewSelectionRef.current) {
+            const activeSegment = findFrameAtTime(frames, nextSegment.start);
+            if (activeSegment) {
+              setSelectedFrameIds(new Set([activeSegment.frame.id]));
+            }
+          }
+
+          playNextSegment();
+        }, segment.duration || globalDuration);
+      };
+
+      playNextSegment();
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
     }
 
     // Start from selected frame if available
@@ -400,6 +541,7 @@ const App: React.FC = () => {
 
     let currentIndex = startIndex;
     setPreviewFrameIndex(currentIndex);
+    setPreviewTimeMs(getFrameStartTime(frames, currentIndex));
 
     let timeoutId: ReturnType<typeof setTimeout>;
 
@@ -411,6 +553,7 @@ const App: React.FC = () => {
         if (!isPlaying) return; // Check again inside timeout
         currentIndex = (currentIndex + 1) % frames.length;
         setPreviewFrameIndex(currentIndex);
+        setPreviewTimeMs(getFrameStartTime(frames, currentIndex));
 
         // Sync selection if enabled
         if (syncPreviewSelectionRef.current) {
@@ -428,7 +571,7 @@ const App: React.FC = () => {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [isPlaying, frames, globalDuration]);
+  }, [isPlaying, frames, frameTracks, globalDuration]);
 
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -624,8 +767,7 @@ const App: React.FC = () => {
       const blob = await response.blob();
       const frameFile = new File([blob], `${sourceFile.name.replace(extensionPattern, '')}_${j}.png`, { type: 'image/png' });
 
-      targetFrames.push({
-        id: Math.random().toString(36).substr(2, 9),
+      targetFrames.push(createFrameFromImage({
         file: frameFile,
         previewUrl: decodedFrame.url,
         duration: decodedFrame.delay || fallbackDuration,
@@ -635,7 +777,7 @@ const App: React.FC = () => {
         height: decodedFrame.height,
         originalWidth: decodedFrame.width,
         originalHeight: decodedFrame.height,
-      });
+      }));
     }
   };
 
@@ -840,13 +982,12 @@ const App: React.FC = () => {
             const scaledWidth = Math.round(frame.originalWidth * scale);
             const scaledHeight = Math.round(frame.originalHeight * scale);
 
-            return {
-              ...frame,
+            return updateFrameActiveLayer(frame, {
               width: scaledWidth,
               height: scaledHeight,
               x: Math.round((canvasWidth - scaledWidth) / 2),
               y: Math.round((canvasHeight - scaledHeight) / 2),
-            };
+            });
           });
 
           return {
@@ -877,7 +1018,13 @@ const App: React.FC = () => {
 
   const selectFrameByIndex = useCallback((index: number) => {
     const frame = frames[index];
-    if (!frame) return;
+    if (!frame) {
+      lastSelectedIdRef.current = null;
+      setSelectedFrameIds(prev => prev.size === 0 ? prev : new Set());
+      setPreviewFrameIndex(Math.max(0, index));
+      setPreviewTimeMs(createCompositionTimeline(frameTracks, frames)[Math.max(0, index)]?.start ?? 0);
+      return;
+    }
 
     lastSelectedIdRef.current = frame.id;
     setSelectedFrameIds(prev => {
@@ -888,7 +1035,27 @@ const App: React.FC = () => {
       return new Set([frame.id]);
     });
     setPreviewFrameIndex(index);
-  }, [frames]);
+    setPreviewTimeMs(getFrameStartTime(frames, index));
+  }, [frames, frameTracks]);
+
+  const selectTimelineTime = useCallback((timeMs: number) => {
+    const safeTime = Math.max(0, Math.round(timeMs));
+    const activeSegment = findFrameAtTime(frames, safeTime);
+
+    setPreviewTimeMs(safeTime);
+
+    if (activeSegment) {
+      setPreviewFrameIndex(activeSegment.index);
+      lastSelectedIdRef.current = activeSegment.frame.id;
+      setSelectedFrameIds(prev => (
+        prev.size === 1 && prev.has(activeSegment.frame.id) ? prev : new Set([activeSegment.frame.id])
+      ));
+    } else {
+      setPreviewFrameIndex(null);
+      lastSelectedIdRef.current = null;
+      setSelectedFrameIds(prev => prev.size === 0 ? prev : new Set());
+    }
+  }, [frames, frameTracks]);
 
   // Copy to internal clipboard
   const handleCopy = useCallback(() => {
@@ -907,10 +1074,7 @@ const App: React.FC = () => {
     if (clipboard.length === 0) return;
 
     // Create copies with new IDs
-    const newFrames = clipboard.map(f => ({
-      ...f,
-      id: Math.random().toString(36).substr(2, 9)
-    }));
+    const newFrames = clipboard.map(cloneFrameWithNewIds);
 
     setAppState(prev => {
       // Determine insertion index
@@ -950,10 +1114,7 @@ const App: React.FC = () => {
     if (selectedFramesInOrder.length === 0) return;
 
     // Create copies with new IDs
-    const newFrames: FrameData[] = selectedFramesInOrder.map(f => ({
-      ...f,
-      id: Math.random().toString(36).substr(2, 9)
-    }));
+    const newFrames: FrameData[] = selectedFramesInOrder.map(cloneFrameWithNewIds);
 
     const newIds = new Set(newFrames.map(f => f.id));
 
@@ -1043,10 +1204,7 @@ const App: React.FC = () => {
     if (!contextMenu || clipboard.length === 0) return;
     const { insertIndex } = contextMenu;
 
-    const newFrames = clipboard.map(f => ({
-      ...f,
-      id: Math.random().toString(36).substr(2, 9)
-    }));
+    const newFrames = clipboard.map(cloneFrameWithNewIds);
 
     setAppState(prev => {
       const nextFrames = [...prev.frames];
@@ -1117,10 +1275,7 @@ const App: React.FC = () => {
       .filter(f => selectedFrameIds.has(f.id))
       .sort((a, b) => frames.indexOf(a) - frames.indexOf(b));
 
-    const newFrames: FrameData[] = selectedFramesInOrder.map(f => ({
-      ...f,
-      id: Math.random().toString(36).substr(2, 9)
-    }));
+    const newFrames: FrameData[] = selectedFramesInOrder.map(cloneFrameWithNewIds);
 
     setAppState(prev => {
       const nextFrames = [...prev.frames];
@@ -1131,6 +1286,90 @@ const App: React.FC = () => {
     // Select new frames
     const newIds = new Set(newFrames.map(f => f.id));
     setSelectedFrameIds(newIds);
+    setContextMenu(null);
+  };
+
+  const handleMergeSelectedAsLayers = () => {
+    if (selectedFrameIds.size < 2) {
+      setContextMenu(null);
+      return;
+    }
+
+    const activeId = lastSelectedIdRef.current && selectedFrameIds.has(lastSelectedIdRef.current)
+      ? lastSelectedIdRef.current
+      : Array.from(selectedFrameIds).pop();
+
+    if (!activeId) {
+      setContextMenu(null);
+      return;
+    }
+
+    setAppState(prev => {
+      const targetFrame = prev.frames.find(frame => frame.id === activeId);
+      if (!targetFrame) return prev;
+
+      const selectedFramesInOrder = prev.frames.filter(frame => selectedFrameIds.has(frame.id));
+      const baseLayers = getFrameLayers(targetFrame);
+      const importedLayers = selectedFramesInOrder
+        .filter(frame => frame.id !== activeId)
+        .flatMap((frame, frameOffset) => getFrameLayers(frame).map((layer, layerOffset) => ({
+          ...layer,
+          id: `${activeId}:layer:${baseLayers.length + frameOffset}-${layerOffset}-${Math.random().toString(36).substr(2, 5)}`,
+          name: `${frame.file.name || layer.name}`,
+          startFrame: 0,
+          endFrame: null,
+        })));
+
+      const mergedFrame: FrameData = {
+        ...targetFrame,
+        layers: [...baseLayers, ...importedLayers],
+        activeLayerId: targetFrame.activeLayerId ?? baseLayers[0]?.id,
+      };
+
+      return {
+        ...prev,
+        frames: prev.frames
+          .filter(frame => frame.id === activeId || !selectedFrameIds.has(frame.id))
+          .map(frame => frame.id === activeId ? mergedFrame : frame),
+      };
+    }, 'mergeFramesAsLayers');
+
+    setSelectedFrameIds(new Set([activeId]));
+    lastSelectedIdRef.current = activeId;
+    setContextMenu(null);
+  };
+
+  const handleAddSelectedAsTimelineTrack = () => {
+    if (selectedFrameIds.size === 0) {
+      setContextMenu(null);
+      return;
+    }
+
+    const selectedFramesInOrder = frames.filter(frame => selectedFrameIds.has(frame.id));
+    if (selectedFramesInOrder.length === 0) {
+      setContextMenu(null);
+      return;
+    }
+
+    const trackIndex = frameTracks.length + 1;
+    const nextTrack: FrameTrack = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `Track ${trackIndex}`,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      frames: selectedFramesInOrder.map(cloneFrameWithNewIds),
+    };
+
+    setAppState(prev => ({
+      ...prev,
+      frameTracks: [...prev.frameTracks, nextTrack],
+      activeFrameTrackId: nextTrack.id,
+      frames: nextTrack.frames,
+    }), 'addFrameTrackFromSelection');
+
+    setSelectedFrameIds(new Set(nextTrack.frames.map(frame => frame.id)));
+    lastSelectedIdRef.current = nextTrack.frames[nextTrack.frames.length - 1]?.id ?? null;
     setContextMenu(null);
   };
 
@@ -1196,13 +1435,12 @@ const App: React.FC = () => {
       ...prev,
       frames: prev.frames.map(f => {
         if (selectedFrameIds.has(f.id)) {
-          return {
-            ...f,
+          return updateFrameActiveLayer(f, {
             width: f.originalWidth,
             height: f.originalHeight,
             x: 0,
             y: 0
-          };
+          });
         }
         return f;
       })
@@ -1372,8 +1610,7 @@ const App: React.FC = () => {
       // Determine duration: metadata > metadata default > global
       const frameDuration = fileDurationMap.get(file.name) ?? metadataDefaultDuration ?? globalDuration;
 
-      newFrames.push({
-        id: Math.random().toString(36).substr(2, 9),
+      newFrames.push(createFrameFromImage({
         file,
         previewUrl: url,
         duration: frameDuration,
@@ -1383,7 +1620,7 @@ const App: React.FC = () => {
         height: img.naturalHeight,
         originalWidth: img.naturalWidth,
         originalHeight: img.naturalHeight,
-      });
+      }));
     }
 
     hideNotification();
@@ -1755,8 +1992,7 @@ const App: React.FC = () => {
       // Determine duration: metadata > metadata default > global
       const frameDuration = fileDurationMap.get(file.name) ?? metadataDefaultDuration ?? globalDuration;
 
-      newFrames.push({
-        id: Math.random().toString(36).substr(2, 9),
+      newFrames.push(createFrameFromImage({
         file,
         previewUrl: url,
         duration: frameDuration,
@@ -1766,7 +2002,7 @@ const App: React.FC = () => {
         height: img.naturalHeight,
         originalWidth: img.naturalWidth,
         originalHeight: img.naturalHeight,
-      });
+      }));
     }
 
     hideNotification();
@@ -1812,13 +2048,12 @@ const App: React.FC = () => {
           const x = Math.round((canvasWidth - scaledWidth) / 2);
           const y = Math.round((canvasHeight - scaledHeight) / 2);
 
-          return {
-            ...frame,
+          return updateFrameActiveLayer(frame, {
             width: scaledWidth,
             height: scaledHeight,
             x,
             y
-          };
+          });
         });
 
         // Non-first import: ask user if they want to enable transparency
@@ -1989,7 +2224,7 @@ const App: React.FC = () => {
       ...prev,
       frames: prev.frames.map(f => {
         if (selectedFrameIds.has(f.id)) {
-          return { ...f, ...updates };
+          return updateFrameActiveLayer(f, updates);
         }
         return f;
       })
@@ -2017,7 +2252,7 @@ const App: React.FC = () => {
   const updateFrame = (id: string, updates: Partial<FrameData>) => {
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.map(f => f.id === id ? { ...f, ...updates } : f)
+      frames: prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f)
     }), 'updateFrame');
   };
 
@@ -2026,13 +2261,12 @@ const App: React.FC = () => {
       ...prev,
       frames: prev.frames.map(f => {
         if (f.id === id) {
-          return {
-            ...f,
+          return updateFrameActiveLayer(f, {
             x: 0,
             y: 0,
             width: f.originalWidth,
             height: f.originalHeight,
-          };
+          });
         }
         return f;
       })
@@ -2044,6 +2278,46 @@ const App: React.FC = () => {
   // Calculates the delta and applies it to all selected frames.
   const handleCanvasUpdate = (newAttrs: Partial<FrameData>, commit: boolean = true) => {
     const updateFn = (prev: AppState) => {
+      if (selectedGlobalLayerId) {
+        const trackWithClip = (prev.layerTracks ?? []).find(track => (
+          track.clips.some(clip => clip.id === selectedGlobalLayerId)
+        ));
+        const activeLayer = trackWithClip
+          ? trackWithClip.clips.find(clip => clip.id === selectedGlobalLayerId)
+          : (prev.globalLayers ?? []).find(layer => layer.id === selectedGlobalLayerId);
+        if (!activeLayer) return prev;
+
+        const updateLayer = (layer: LayerData) => ({
+          ...layer,
+          x: newAttrs.x ?? layer.x,
+          y: newAttrs.y ?? layer.y,
+          width: newAttrs.width ?? layer.width,
+          height: newAttrs.height ?? layer.height,
+          rotation: newAttrs.rotation ?? layer.rotation,
+        });
+
+        if (trackWithClip) {
+          return {
+            ...prev,
+            layerTracks: (prev.layerTracks ?? []).map(track => {
+              if (track.id !== trackWithClip.id) return track;
+              return {
+                ...track,
+                clips: track.clips.map(clip => clip.id === selectedGlobalLayerId ? updateLayer(clip) : clip),
+              };
+            }),
+          };
+        }
+
+        return {
+          ...prev,
+          globalLayers: (prev.globalLayers ?? []).map(layer => {
+            if (layer.id !== selectedGlobalLayerId) return layer;
+            return updateLayer(layer);
+          }),
+        };
+      }
+
       // Find the active frame (the one being edited in the canvas)
       // We assume it's the last selected one as that's what we pass to CanvasEditor
       const activeId = Array.from(selectedFrameIds).pop();
@@ -2071,16 +2345,15 @@ const App: React.FC = () => {
         ...prev,
         frames: prev.frames.map(f => {
           if (selectedFrameIds.has(f.id)) {
-            const updatedFrame = {
-              ...f,
+            const updatedFrame = updateFrameActiveLayer(f, {
               x: Math.round(f.x + dx),
               y: Math.round(f.y + dy),
               width: Math.max(1, Math.round(f.width + dw)),
               height: Math.max(1, Math.round(f.height + dh)),
-            };
+            });
 
             if (newRotation !== undefined) {
-              updatedFrame.rotation = newRotation;
+              return updateFrameActiveLayer(updatedFrame, { rotation: newRotation });
             }
 
             return updatedFrame;
@@ -2097,11 +2370,163 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSelectLayer = (layerId: string) => {
+    const activeId = Array.from(selectedFrameIds).pop();
+    if (!activeId) return;
+
+    setSelectedGlobalLayerId(null);
+    setSelectedLayerTrackId(null);
+    setAppState(prev => ({
+      ...prev,
+      frames: prev.frames.map(frame => {
+        if (frame.id !== activeId) return frame;
+
+        return syncFrameFromActiveLayer({
+          ...frame,
+          layers: getFrameLayers(frame),
+          activeLayerId: layerId,
+        });
+      }),
+    }), 'selectLayer');
+  };
+
+  const handleSelectGlobalLayer = (layerId: string, trackId?: string) => {
+    setSelectedGlobalLayerId(layerId);
+    setSelectedLayerTrackId(trackId ?? null);
+  };
+
+  const handleUpdateLayerTrack = (trackId: string, updates: Partial<LayerTrack>) => {
+    setAppState(prev => ({
+      ...prev,
+      layerTracks: (prev.layerTracks ?? []).map(track => (
+        track.id === trackId ? { ...track, ...updates } : track
+      )),
+    }), 'updateLayerTrack');
+  };
+
+  const handleUpdateTrackClip = (trackId: string, clipId: string, updates: Partial<LayerData>) => {
+    setAppState(prev => ({
+      ...prev,
+      layerTracks: (prev.layerTracks ?? []).map(track => {
+        if (track.id !== trackId) return track;
+        return {
+          ...track,
+          clips: track.clips.map(clip => clip.id === clipId ? { ...clip, ...updates } : clip),
+        };
+      }),
+    }), 'updateTrackClip');
+  };
+
+  const handleDeleteLayerTrack = (trackId: string) => {
+    setAppState(prev => ({
+      ...prev,
+      layerTracks: (prev.layerTracks ?? []).filter(track => track.id !== trackId),
+    }), 'deleteLayerTrack');
+
+    if (selectedLayerTrackId === trackId) {
+      setSelectedLayerTrackId(null);
+      setSelectedGlobalLayerId(null);
+    }
+  };
+
+  const handleDeleteTrackClip = (trackId: string, clipId: string) => {
+    setAppState(prev => ({
+      ...prev,
+      layerTracks: (prev.layerTracks ?? []).map(track => {
+        if (track.id !== trackId) return track;
+        return {
+          ...track,
+          clips: track.clips.filter(clip => clip.id !== clipId),
+        };
+      }).filter(track => track.clips.length > 0),
+    }), 'deleteTrackClip');
+
+    if (selectedGlobalLayerId === clipId) {
+      setSelectedGlobalLayerId(null);
+      setSelectedLayerTrackId(null);
+    }
+  };
+
+  const handleSelectFrameTrack = (trackId: string) => {
+    const targetTrack = frameTracks.find(track => track.id === trackId);
+    if (!targetTrack) return;
+
+    setAppState(prev => ({
+      ...prev,
+      activeFrameTrackId: trackId,
+      frames: targetTrack.frames,
+    }), 'selectFrameTrack');
+
+    setSelectedFrameIds(new Set());
+    lastSelectedIdRef.current = null;
+  };
+
+  const handleUpdateFrameTrack = (trackId: string, updates: Partial<FrameTrack>) => {
+    setAppState(prev => ({
+      ...prev,
+      frameTracks: prev.frameTracks.map(track => (
+        track.id === trackId ? { ...track, ...updates } : track
+      )),
+      frames: trackId === prev.activeFrameTrackId && updates.frames ? updates.frames : prev.frames,
+    }), 'updateFrameTrack');
+  };
+
+  const handleAddFrameTrack = () => {
+    const nextIndex = frameTracks.length + 1;
+    const nextTrack: FrameTrack = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `Track ${nextIndex}`,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      frames: [],
+    };
+
+    setAppState(prev => ({
+      ...prev,
+      frameTracks: [...prev.frameTracks, nextTrack],
+      activeFrameTrackId: nextTrack.id,
+      frames: [],
+    }), 'addFrameTrack');
+
+    setSelectedFrameIds(new Set());
+    lastSelectedIdRef.current = null;
+  };
+
+  const handleDeleteFrameTrack = (trackId: string) => {
+    if (frameTracks.length <= 1) return;
+
+    const remainingTracks = frameTracks.filter(track => track.id !== trackId);
+    const nextActiveTrack = activeFrameTrackId === trackId
+      ? remainingTracks[0]
+      : remainingTracks.find(track => track.id === activeFrameTrackId) ?? remainingTracks[0];
+
+    setAppState(prev => ({
+      ...prev,
+      frameTracks: remainingTracks,
+      activeFrameTrackId: nextActiveTrack?.id ?? null,
+      frames: nextActiveTrack?.frames ?? [],
+    }), 'deleteFrameTrack');
+
+    setSelectedFrameIds(new Set());
+    lastSelectedIdRef.current = null;
+  };
+
   const clearAll = useCallback(async () => {
     if (clearFramesConfirm) {
-      setAppState(prev => ({ ...prev, frames: [] }));
+      const emptyTrack = createDefaultFrameTrack([]);
+      setAppState(prev => ({
+        ...prev,
+        frames: [],
+        frameTracks: [emptyTrack],
+        activeFrameTrackId: emptyTrack.id,
+        globalLayers: [],
+        layerTracks: [],
+      }));
       setGeneratedGif(null);
       setSelectedFrameIds(new Set());
+      setSelectedGlobalLayerId(null);
+      setSelectedLayerTrackId(null);
       setClearFramesConfirm(false);
     } else {
       setClearFramesConfirm(true);
@@ -2172,13 +2597,12 @@ const App: React.FC = () => {
           newY = Math.round((canvasH - newHeight) / 2);
         }
 
-        return {
-          ...frame,
+        return updateFrameActiveLayer(frame, {
           width: newWidth,
           height: newHeight,
           x: newX,
           y: newY
-        };
+        });
       })
     }), 'batchUpdate');
   };
@@ -2196,11 +2620,10 @@ const App: React.FC = () => {
         const newX = Math.round((canvasW - frame.width) / 2);
         const newY = Math.round((canvasH - frame.height) / 2);
 
-        return {
-          ...frame,
+        return updateFrameActiveLayer(frame, {
           x: newX,
           y: newY
-        };
+        });
       })
     }), 'batchUpdate');
   };
@@ -2230,13 +2653,12 @@ const App: React.FC = () => {
           newY = Math.round((canvasH - newHeight) / 2);
         }
 
-        return {
-          ...frame,
+        return updateFrameActiveLayer(frame, {
           width: newWidth,
           height: newHeight,
           x: newX,
           y: newY
-        };
+        });
       })
     }), 'batchUpdate');
   };
@@ -2254,6 +2676,10 @@ const App: React.FC = () => {
         timestamp: Date.now(),
         name,
         frames: [...frames],
+        frameTracks: frameTracks.map(track => ({ ...track, frames: [...track.frames] })),
+        activeFrameTrackId: activeFrameTrackId ?? undefined,
+        globalLayers: [...globalLayers],
+        layerTracks: [...layerTracks],
         canvasConfig: { ...canvasConfig },
         thumbnail,
         format
@@ -2270,17 +2696,23 @@ const App: React.FC = () => {
         console.error("Failed to save snapshot to IndexedDB", e);
       }
     }
-  }, [frames, canvasConfig, language, snapshots.length]);
+  }, [frames, frameTracks, activeFrameTrackId, globalLayers, layerTracks, canvasConfig, language, snapshots.length]);
 
   const restoreSnapshot = (snapshot: HistorySnapshot) => {
     if (restoreConfirmId === snapshot.id) {
       setAppState({
         frames: snapshot.frames,
+        frameTracks: snapshot.frameTracks ?? [createDefaultFrameTrack(snapshot.frames)],
+        activeFrameTrackId: snapshot.activeFrameTrackId ?? snapshot.frameTracks?.[0]?.id ?? 'track-main',
+        globalLayers: snapshot.globalLayers ?? [],
+        layerTracks: snapshot.layerTracks ?? [],
         canvasConfig: snapshot.canvasConfig
       });
       setShowSnapshots(false);
       setRestoreConfirmId(null);
       setSelectedFrameIds(new Set());
+      setSelectedGlobalLayerId(null);
+      setSelectedLayerTrackId(null);
     } else {
       setRestoreConfirmId(snapshot.id);
       setTimeout(() => setRestoreConfirmId(null), 2000);
@@ -2329,14 +2761,34 @@ const App: React.FC = () => {
       return {
         ...prev,
         frames: shouldScaleExistingFrames
-          ? prev.frames.map(frame => ({
-            ...frame,
+          ? prev.frames.map(frame => updateFrameActiveLayer(frame, {
             x: Math.round(frame.x * (newWidth / prev.canvasConfig.width)),
             y: Math.round(frame.y * (newHeight / prev.canvasConfig.height)),
             width: Math.round(frame.width * (newWidth / prev.canvasConfig.width)),
             height: Math.round(frame.height * (newHeight / prev.canvasConfig.height))
           }))
           : prev.frames,
+        globalLayers: shouldScaleExistingFrames
+          ? (prev.globalLayers ?? []).map(layer => ({
+            ...layer,
+            x: Math.round(layer.x * (newWidth / prev.canvasConfig.width)),
+            y: Math.round(layer.y * (newHeight / prev.canvasConfig.height)),
+            width: Math.round(layer.width * (newWidth / prev.canvasConfig.width)),
+            height: Math.round(layer.height * (newHeight / prev.canvasConfig.height)),
+          }))
+          : prev.globalLayers,
+        layerTracks: shouldScaleExistingFrames
+          ? (prev.layerTracks ?? []).map(track => ({
+            ...track,
+            clips: track.clips.map(clip => ({
+              ...clip,
+              x: Math.round(clip.x * (newWidth / prev.canvasConfig.width)),
+              y: Math.round(clip.y * (newHeight / prev.canvasConfig.height)),
+              width: Math.round(clip.width * (newWidth / prev.canvasConfig.width)),
+              height: Math.round(clip.height * (newHeight / prev.canvasConfig.height)),
+            })),
+          }))
+          : prev.layerTracks,
         canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
       };
     });
@@ -2350,14 +2802,34 @@ const App: React.FC = () => {
       return {
         ...prev,
         frames: shouldScaleExistingFrames
-          ? prev.frames.map(frame => ({
-            ...frame,
+          ? prev.frames.map(frame => updateFrameActiveLayer(frame, {
             x: Math.round(frame.x * (newWidth / prev.canvasConfig.width)),
             y: Math.round(frame.y * (newHeight / prev.canvasConfig.height)),
             width: Math.round(frame.width * (newWidth / prev.canvasConfig.width)),
             height: Math.round(frame.height * (newHeight / prev.canvasConfig.height))
           }))
           : prev.frames,
+        globalLayers: shouldScaleExistingFrames
+          ? (prev.globalLayers ?? []).map(layer => ({
+            ...layer,
+            x: Math.round(layer.x * (newWidth / prev.canvasConfig.width)),
+            y: Math.round(layer.y * (newHeight / prev.canvasConfig.height)),
+            width: Math.round(layer.width * (newWidth / prev.canvasConfig.width)),
+            height: Math.round(layer.height * (newHeight / prev.canvasConfig.height)),
+          }))
+          : prev.globalLayers,
+        layerTracks: shouldScaleExistingFrames
+          ? (prev.layerTracks ?? []).map(track => ({
+            ...track,
+            clips: track.clips.map(clip => ({
+              ...clip,
+              x: Math.round(clip.x * (newWidth / prev.canvasConfig.width)),
+              y: Math.round(clip.y * (newHeight / prev.canvasConfig.height)),
+              width: Math.round(clip.width * (newWidth / prev.canvasConfig.width)),
+              height: Math.round(clip.height * (newHeight / prev.canvasConfig.height)),
+            })),
+          }))
+          : prev.layerTracks,
         canvasConfig: { ...prev.canvasConfig, width: newWidth, height: newHeight }
       };
     });
@@ -2395,27 +2867,14 @@ const App: React.FC = () => {
       let cropRight = -1;
       let cropBottom = -1;
 
-      for (const frame of frames) {
-        const img = await loadFrameImageForCrop(frame.previewUrl);
+      const imageCache = new Map<string, HTMLImageElement>();
 
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-        if (frame.rotation) {
-          ctx.save();
-          const cx = frame.x + frame.width / 2;
-          const cy = frame.y + frame.height / 2;
-          ctx.translate(cx, cy);
-          ctx.rotate((frame.rotation * Math.PI) / 180);
-
-          if (Math.abs(frame.rotation % 180) === 90) {
-            ctx.drawImage(img, -frame.height / 2, -frame.width / 2, frame.height, frame.width);
-          } else {
-            ctx.drawImage(img, -frame.width / 2, -frame.height / 2, frame.width, frame.height);
-          }
-          ctx.restore();
-        } else {
-          ctx.drawImage(img, frame.x, frame.y, frame.width, frame.height);
-        }
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i];
+        await renderFrameTracksToCanvas(frameTracks, frame, { ...canvasConfig, transparent: 'rgba(0,0,0,0)' }, ctx, {
+          timelineFrameIndex: i,
+          imageCache,
+        });
 
         const data = ctx.getImageData(0, 0, canvasWidth, canvasHeight).data;
         let frameLeft = canvasWidth;
@@ -2453,10 +2912,22 @@ const App: React.FC = () => {
 
       setAppState(prev => ({
         ...prev,
-        frames: prev.frames.map(frame => ({
-          ...frame,
+        frames: prev.frames.map(frame => updateFrameActiveLayer(frame, {
           x: frame.x - cropLeft,
           y: frame.y - cropTop,
+        })),
+        globalLayers: (prev.globalLayers ?? []).map(layer => ({
+          ...layer,
+          x: layer.x - cropLeft,
+          y: layer.y - cropTop,
+        })),
+        layerTracks: (prev.layerTracks ?? []).map(track => ({
+          ...track,
+          clips: track.clips.map(clip => ({
+            ...clip,
+            x: clip.x - cropLeft,
+            y: clip.y - cropTop,
+          })),
         })),
         canvasConfig: {
           ...prev.canvasConfig,
@@ -2493,16 +2964,19 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (frames.length === 0) return;
+    const hasTrackFrames = frameTracks.some(track => track.frames.length > 0);
+    if (frames.length === 0 && !hasTrackFrames) return;
     const exportStartIndex = exportInFrameIndex ?? 0;
-    const exportEndIndex = exportOutFrameIndex ?? frames.length - 1;
+    const exportEndIndex = exportOutFrameIndex ?? Math.max(frames.length - 1, createCompositionTimeline(frameTracks, frames).length - 1);
 
     if (exportStartIndex > exportEndIndex) {
       showNotification(t.exportRangeInvalid);
       return;
     }
 
-    const framesToExport = frames.slice(exportStartIndex, exportEndIndex + 1);
+    const framesToExport = frameTracks.length > 0
+      ? (frames.length > 0 ? frames : [frameTracks.flatMap(track => track.frames)[0]!])
+      : frames.slice(exportStartIndex, exportEndIndex + 1);
     if (framesToExport.length === 0) return;
 
     setIsGenerating(true);
@@ -2539,7 +3013,10 @@ const App: React.FC = () => {
           exportConfig,
           (p) => setProgress(p * 100),
           (status) => setProgressText(status),
-          apngTexts
+          apngTexts,
+          globalLayers,
+          layerTracks,
+          frameTracks
         )
         : exportFormat === 'webp'
           ? await (async () => {
@@ -2549,7 +3026,10 @@ const App: React.FC = () => {
               exportConfig,
               (p) => setProgress(p * 100),
               (status) => setProgressText(status),
-              webpTexts
+              webpTexts,
+              globalLayers,
+              layerTracks,
+              frameTracks
             );
           })()
         : await generateGIF(
@@ -2559,7 +3039,10 @@ const App: React.FC = () => {
           !isNaN(targetMB) && targetMB > 0 ? targetMB : undefined,
           (status) => setProgressText(status),
           t.generation,
-          isGifTransparentEnabled ? gifTransparentColor : null
+          isGifTransparentEnabled ? gifTransparentColor : null,
+          globalLayers,
+          layerTracks,
+          frameTracks
         );
       const url = URL.createObjectURL(blob);
       setGeneratedGif(url);
@@ -2701,11 +3184,10 @@ const App: React.FC = () => {
       const newFile = new File([blob], frame.file.name, { type: 'image/png' });
       const newUrl = URL.createObjectURL(newFile);
 
-      return {
-        ...frame,
+      return updateFrameActiveLayer(frame, {
         file: newFile,
         previewUrl: newUrl
-      };
+      });
     }));
 
     setAppState(prev => ({ ...prev, frames: newFrames }));
@@ -3100,11 +3582,14 @@ const App: React.FC = () => {
             isLargeScreen={isLargeScreen}
             editorHeight={editorHeight}
             frames={frames}
+            frameTracks={frameTracks}
+            activeFrameTrackId={activeFrameTrackId}
             selectedFrameIds={selectedFrameIds}
             selectedFrame={selectedFrame}
             selectedFrameIndex={selectedFrameIndex}
             isPlaying={isPlaying}
             previewFrameIndex={previewFrameIndex}
+            previewTimeMs={previewTimeMs}
             syncPreviewSelection={syncPreviewSelection}
             exportInFrameIndex={exportInFrameIndex}
             exportOutFrameIndex={exportOutFrameIndex}
@@ -3128,11 +3613,27 @@ const App: React.FC = () => {
               exportInPoint: t.exportInPoint,
               exportOutPoint: t.exportOutPoint,
               clearExportRange: t.clearExportRange,
+              frameTracks: language === 'zh' ? '帧轨道' : 'Frame Tracks',
+              noFrameTracks: language === 'zh' ? '暂无轨道' : 'No tracks yet',
+              addTrack: language === 'zh' ? '添加轨道' : 'Add Track',
+              startFrame: language === 'zh' ? '起' : 'Start',
+              endFrame: language === 'zh' ? '止' : 'End',
+              opacity: language === 'zh' ? '透明度' : 'Opacity',
+              visible: language === 'zh' ? '显示' : 'Visible',
+              hidden: language === 'zh' ? '隐藏' : 'Hidden',
+              locked: language === 'zh' ? '锁定' : 'Locked',
+              unlocked: language === 'zh' ? '未锁定' : 'Unlocked',
+              deleteLayer: language === 'zh' ? '删除图层' : 'Delete layer',
             }}
             onSyncPreviewSelectionChange={setSyncPreviewSelection}
             onPlayingChange={setIsPlaying}
             onHideEditor={() => setShowCanvasEditor(false)}
             onCanvasUpdate={handleCanvasUpdate}
+            onSelectLayer={handleSelectLayer}
+            onSelectFrameTrack={handleSelectFrameTrack}
+            onUpdateFrameTrack={handleUpdateFrameTrack}
+            onAddFrameTrack={handleAddFrameTrack}
+            onDeleteFrameTrack={handleDeleteFrameTrack}
             onColorPick={(color) => {
               if (isEyeDropperActive) {
                 setRemoveColor(color);
@@ -3147,6 +3648,7 @@ const App: React.FC = () => {
             }}
             onSelectFrame={handleSelection}
             onSelectFrameByIndex={selectFrameByIndex}
+            onSelectTimelineTime={selectTimelineTime}
             onSetExportInPoint={setExportInPointFromCurrentFrame}
             onSetExportOutPoint={setExportOutPointFromCurrentFrame}
             onClearExportRange={clearExportRange}
@@ -3322,6 +3824,11 @@ const App: React.FC = () => {
         onCopy={handleContextCopy}
         onPaste={handleContextPaste}
         onDuplicate={handleContextDuplicate}
+        canMergeSelectedAsLayers={selectedFrameIds.size > 1}
+        mergeAsLayersLabel={language === 'zh' ? '合并为图层' : 'Merge as layers'}
+        onMergeSelectedAsLayers={handleMergeSelectedAsLayers}
+        addTimelineLayersLabel={language === 'zh' ? '选中帧新建轨道' : 'New track from selection'}
+        onAddTimelineLayers={handleAddSelectedAsTimelineTrack}
         onInsert={handleContextInsert}
         onReverseSelected={handleReverseSelectedFrames}
         onAlignCenter={() => handleAlignCenter('selected')}
