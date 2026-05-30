@@ -8,6 +8,7 @@ import { Move, ZoomIn, ZoomOut, Maximize, Lock, Unlock, Magnet, Info, ChevronLef
 interface CanvasEditorProps {
   frame: FrameData | null;
   frameIndex?: number;
+  previewBitmap?: CanvasImageSource | null;
   globalLayers?: LayerData[];
   layerTracks?: LayerTrack[];
   activeGlobalLayerId?: string | null;
@@ -24,6 +25,44 @@ interface CanvasEditorProps {
   gifTransparentColor?: string | null;
   isGifTransparentEnabled?: boolean;
 }
+
+const CachedPreviewCanvas: React.FC<{
+  bitmap: CanvasImageSource;
+  width: number;
+  height: number;
+}> = ({ bitmap, width, height }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = Math.max(1, width);
+    canvas.height = Math.max(1, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'InvalidStateError') {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+
+      throw error;
+    }
+  }, [bitmap, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 h-full w-full pointer-events-none"
+      aria-hidden="true"
+    />
+  );
+};
 
 type InteractionMode = 'idle' | 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br' | 'resize-l' | 'resize-r' | 'resize-t' | 'resize-b';
 
@@ -120,6 +159,7 @@ const EditableStat = ({
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({ 
   frame, 
   frameIndex, 
+  previewBitmap,
   globalLayers = [],
   layerTracks = [],
   activeGlobalLayerId,
@@ -676,6 +716,26 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     backgroundPosition: '0 0'
   };
 
+  if (!frame && previewBitmap) {
+    return (
+      <div
+        ref={containerRef}
+        className="flex-1 bg-gray-950 relative overflow-hidden flex items-center justify-center p-4 md:p-8 select-none touch-none"
+      >
+        <div
+          className="relative shadow-2xl box-content border border-gray-700"
+          style={canvasStyle}
+        >
+          <CachedPreviewCanvas
+            bitmap={previewBitmap}
+            width={config.width}
+            height={config.height}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!frame) {
     if (showBlankCanvas) {
       return (
@@ -716,7 +776,13 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         style={canvasStyle}
       >
         {/* Frame Layers */}
-        {[...frameLayers, ...visibleGlobalLayers].map((layer) => {
+        {previewBitmap ? (
+          <CachedPreviewCanvas
+            bitmap={previewBitmap}
+            width={config.width}
+            height={config.height}
+          />
+        ) : [...frameLayers, ...visibleGlobalLayers].map((layer) => {
           const isActiveLayer = layer.id === activeLayer?.id;
           const layerStyle: React.CSSProperties = {
             left: layer.x * scale,
@@ -763,6 +829,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         })}
 
         {/* Active Layer Controls */}
+        {!previewBitmap && (
         <div 
           className={`absolute group ${isEyeDropperActive ? 'cursor-crosshair' : 'cursor-move'} touch-none ${interaction || isPreview ? '' : 'transition-all duration-200 ease-out'}`}
           style={{ ...frameStyle, pointerEvents: isEyeDropperActive ? 'none' : 'auto' }}
@@ -818,6 +885,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             </>
           )}
         </div>
+        )}
       </div>
       
 

@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, memo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FrameData } from '../types';
-import { X, GripVertical, RotateCcw } from 'lucide-react';
+import { X, GripVertical, MoreVertical, RotateCcw } from 'lucide-react';
 import { FrameLabels } from '../utils/translations';
 import { TransparentImage } from './TransparentImage';
 
@@ -26,6 +27,7 @@ interface FrameCardProps {
   setNodeRef?: (node: HTMLElement | null) => void;
   frameWidth?: number;
   isHorizontal?: boolean;
+  timelineStartTime?: number;
   transparentColor?: string | null;
   isTransparentEnabled?: boolean;
 }
@@ -137,9 +139,185 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
     dragAttributes,
     setNodeRef,
     frameWidth,
-    isHorizontal
+    isHorizontal,
+    timelineStartTime
   } = props;
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [isCompactMenuOpen, setIsCompactMenuOpen] = useState(false);
+  const [compactMenuPosition, setCompactMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const compactMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isCompactMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (compactMenuRef.current && !compactMenuRef.current.contains(event.target as Node)) {
+        setIsCompactMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsCompactMenuOpen(false);
+    };
+    const closeMenu = () => setIsCompactMenuOpen(false);
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
+  }, [isCompactMenuOpen]);
+
+  useEffect(() => {
+    if (!isCompactMenuOpen) setCompactMenuPosition(null);
+  }, [isCompactMenuOpen]);
+
+  const propertyInputs = (
+    <div className="grid grid-cols-2 gap-1.5 text-xs">
+      <div className="col-span-2">
+        <BufferedInput
+          label={labels.time}
+          value={frame.duration}
+          min={10}
+          onChange={(val) => onUpdate?.(frame.id, { duration: val })}
+        />
+      </div>
+      <div className="col-span-2">
+        <BufferedInput
+          label="Start (ms)"
+          tooltip="Start time (ms)"
+          value={timelineStartTime ?? frame.startTime ?? 0}
+          min={0}
+          onChange={(val) => onUpdate?.(frame.id, { startTime: Math.max(0, val) })}
+        />
+      </div>
+      <BufferedInput label="X" tooltip={labels.x} value={frame.x} onChange={(val) => onUpdate?.(frame.id, { x: val })} />
+      <BufferedInput label="Y" tooltip={labels.y} value={frame.y} onChange={(val) => onUpdate?.(frame.id, { y: val })} />
+      <BufferedInput label="W" tooltip={labels.w} value={frame.width} min={1} onChange={(val) => onUpdate?.(frame.id, { width: val })} />
+      <BufferedInput label="H" tooltip={labels.h} value={frame.height} min={1} onChange={(val) => onUpdate?.(frame.id, { height: val })} />
+    </div>
+  );
+
+  const compactMenu = isCompactMenuOpen && compactMenuPosition ? createPortal(
+    <div
+      ref={compactMenuRef}
+      className="fixed z-[9999] w-56 rounded border border-gray-700 bg-gray-900 p-2 shadow-xl shadow-black/40"
+      style={{ left: compactMenuPosition.left, top: compactMenuPosition.top }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="truncate text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Frame #{index + 1}
+        </span>
+        <span className="shrink-0 font-mono text-[10px] text-gray-500">{timelineStartTime ?? frame.startTime ?? 0}ms</span>
+      </div>
+      {propertyInputs}
+      {(onReset || onRemove) && (
+        <div className="mt-2 flex gap-1">
+          {onReset && (
+            <button
+              type="button"
+              onClick={() => {
+                onReset(frame.id);
+                setIsCompactMenuOpen(false);
+              }}
+              className="flex flex-1 items-center justify-center gap-1 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-[11px] text-gray-300 hover:border-blue-500 hover:text-white"
+            >
+              <RotateCcw size={13} />
+              Reset
+            </button>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => {
+                onRemove(frame.id);
+                setIsCompactMenuOpen(false);
+              }}
+              className="flex flex-1 items-center justify-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 hover:border-red-400 hover:text-red-200"
+            >
+              <X size={13} />
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>,
+    document.body
+  ) : null;
+
+  if (compact) {
+    return (
+      <>
+        <div
+          ref={setNodeRef}
+          style={style}
+          data-frame-id={frame.id}
+          {...dragAttributes}
+          {...dragListeners}
+          onClick={(e) => {
+            if (!e.defaultPrevented) {
+              onSelect?.(frame.id, e);
+            }
+          }}
+          onContextMenu={(e) => onContextMenu?.(frame.id, e)}
+          className={`relative group h-full cursor-grab select-none overflow-hidden rounded bg-gray-900 transition-all active:cursor-grabbing ${
+            isSelected ? 'ring-2 ring-blue-500/80' : 'hover:ring-1 hover:ring-gray-600'
+          } ${isDragging ? 'opacity-50' : 'opacity-100'}`}
+        >
+          <TransparentImage
+            src={frame.previewUrl}
+            alt={`Frame ${index}`}
+            draggable={false}
+            className="h-full w-full object-contain pointer-events-none"
+            transparentColor={props.transparentColor}
+            enabled={props.isTransparentEnabled}
+          />
+          <div className="absolute bottom-0 left-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
+            #{index + 1}
+          </div>
+          <div
+            className="pointer-events-none absolute left-1 top-1 rounded bg-black/60 p-0.5 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical size={14} />
+          </div>
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isCompactMenuOpen) {
+                setIsCompactMenuOpen(false);
+                return;
+              }
+
+              const rect = event.currentTarget.getBoundingClientRect();
+              const menuWidth = 224;
+              const menuHeight = 220;
+              const left = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth));
+              const preferredTop = rect.bottom + 6;
+              const top = preferredTop + menuHeight > window.innerHeight
+                ? Math.max(8, rect.top - menuHeight - 6)
+                : preferredTop;
+              setCompactMenuPosition({ left, top });
+              setIsCompactMenuOpen(true);
+            }}
+            className={`absolute bottom-1 right-1 rounded bg-black/70 p-1 text-gray-200 opacity-0 transition-opacity hover:bg-gray-800 hover:text-white group-hover:opacity-100 ${isCompactMenuOpen ? 'opacity-100' : ''}`}
+            title="Frame properties"
+          >
+            <MoreVertical size={14} />
+          </button>
+        </div>
+        {compactMenu}
+      </>
+    );
+  }
 
   return (
     <div
@@ -240,6 +418,15 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
                    onChange={(val) => onUpdate?.(frame.id, { duration: val })} 
                  />
               </div>
+              <div className="col-span-2">
+                 <BufferedInput
+                   label="开始 (ms)"
+                   tooltip="开始出现时间 (ms)"
+                   value={timelineStartTime ?? frame.startTime ?? 0}
+                   min={0}
+                   onChange={(val) => onUpdate?.(frame.id, { startTime: Math.max(0, val) })}
+                 />
+              </div>
               
               <BufferedInput 
                 label="X" 
@@ -298,6 +485,7 @@ interface FrameItemProps {
   isGathering?: boolean;
   frameWidth?: number;
   isHorizontal?: boolean;
+  timelineStartTime?: number;
   transparentColor?: string | null;
   isTransparentEnabled?: boolean;
 }
@@ -343,6 +531,7 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
       prev.confirmResetText !== next.confirmResetText ||
       prev.frameWidth !== next.frameWidth ||
       prev.isHorizontal !== next.isHorizontal ||
+      prev.timelineStartTime !== next.timelineStartTime ||
       prev.onRemove !== next.onRemove ||
       prev.onUpdate !== next.onUpdate ||
       prev.onReset !== next.onReset ||
@@ -379,6 +568,7 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
     f1.previewUrl === f2.previewUrl &&
     f1.colorTag === f2.colorTag &&
     f1.duration === f2.duration &&
+    f1.startTime === f2.startTime &&
     f1.file === f2.file
   );
 });

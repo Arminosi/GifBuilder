@@ -56,7 +56,8 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     isHorizontal,
     transparentColor,
     isTransparentEnabled,
-    gapBeforeByIndex
+    gapBeforeByIndex,
+    startTimeByIndex
   } = data;
 
   const startIndex = index * columnCount;
@@ -107,6 +108,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             isGathering={isGathering}
             frameWidth={frameWidth}
             isHorizontal={isHorizontal}
+            timelineStartTime={startTimeByIndex[startIndex + i]}
             transparentColor={transparentColor}
             isTransparentEnabled={isTransparentEnabled}
           />
@@ -182,7 +184,7 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
 
           // Calculate potential vertical height first
           // Reduced height since inputs are more compact now
-          const potentialVerticalHeight = frameWidth + 160;
+          const potentialVerticalHeight = frameWidth + 188;
           
           // Determine final layout
           // Only use horizontal if not in compact mode
@@ -190,12 +192,12 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
           
           let itemHeight;
           if (compactMode) {
-            itemHeight = frameWidth + 60;
+            itemHeight = frameWidth + GAP;
           } else if (isHorizontal) {
             // Horizontal layout
             // Scale height with width, but maintain minimum for inputs
             // Inputs need ~120px + padding/header
-            itemHeight = Math.max(200, frameWidth * 0.6);
+            itemHeight = Math.max(220, frameWidth * 0.6);
           } else {
             // Vertical layout
             itemHeight = potentialVerticalHeight;
@@ -208,6 +210,7 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
             const previous = trackSegments[index - 1];
             return Math.max(0, segment.start - previous.end);
           });
+          const startTimeByIndex = trackSegments.map(segment => segment.start);
 
           return (
             <List
@@ -237,7 +240,8 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 isHorizontal,
                 transparentColor,
                 isTransparentEnabled,
-                gapBeforeByIndex
+                gapBeforeByIndex,
+                startTimeByIndex
               }}
             >
               {Row}

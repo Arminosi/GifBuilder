@@ -17,7 +17,7 @@ import { generateAPNG } from './utils/apngHelper';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
 import { cloneFrameWithNewIds, createFrameFromImage, createImageLayer, createLayerTrack, flattenTrackLayers, getFrameLayers, syncFrameFromActiveLayer, updateFrameActiveLayer } from './utils/layerHelpers';
 import { renderFrameToCanvas, renderFrameTracksToCanvas } from './utils/layerRenderer';
-import { createCompositionTimeline, findFrameAtTime, getFrameStartTime, getTimelineSegmentIndexAtTime } from './utils/frameTrackTiming';
+import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from './utils/frameTrackTiming';
 import { translations, Language } from './utils/translations';
 import {
   saveSnapshotToDB,
@@ -196,6 +196,26 @@ const syncActiveTrackFrames = (state: AppState): AppState => {
     globalLayers: state.globalLayers ?? [],
     layerTracks: state.layerTracks ?? [],
   };
+};
+
+const fitFramesToCanvas = (sourceFrames: FrameData[], canvasWidth: number, canvasHeight: number): FrameData[] => {
+  const safeCanvasWidth = Math.max(1, canvasWidth);
+  const safeCanvasHeight = Math.max(1, canvasHeight);
+
+  return sourceFrames.map(frame => {
+    const sourceWidth = Math.max(1, frame.originalWidth || frame.width || 1);
+    const sourceHeight = Math.max(1, frame.originalHeight || frame.height || 1);
+    const scale = Math.min(safeCanvasWidth / sourceWidth, safeCanvasHeight / sourceHeight);
+    const scaledWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const scaledHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+    return updateFrameActiveLayer(frame, {
+      width: scaledWidth,
+      height: scaledHeight,
+      x: Math.round((safeCanvasWidth - scaledWidth) / 2),
+      y: Math.round((safeCanvasHeight - scaledHeight) / 2),
+    });
+  });
 };
 
 const App: React.FC = () => {
@@ -485,15 +505,16 @@ const App: React.FC = () => {
 
   // Preview Loop
   useEffect(() => {
-    if (!isPlaying || frames.length === 0) {
-      setPreviewFrameIndex(null);
-      setPreviewTimeMs(null);
+    const hasTimelineFrames = frameTracks.some(track => track.frames.length > 0);
+    if (!isPlaying || (frames.length === 0 && !hasTimelineFrames)) {
       return;
     }
 
     if (frameTracks.length > 0) {
       const timeline = createCompositionTimeline(frameTracks, frames);
-      let currentSegmentIndex = selectedFrameIdsRef.current.size > 0
+      let currentSegmentIndex = previewTimeMs !== null
+        ? getTimelineSegmentIndexAtTime(timeline, previewTimeMs)
+        : selectedFrameIdsRef.current.size > 0
         ? getTimelineSegmentIndexAtTime(timeline, getFrameStartTime(frames, frames.findIndex(f => selectedFrameIdsRef.current.has(f.id))))
         : 0;
 
@@ -618,6 +639,22 @@ const App: React.FC = () => {
       };
     });
   };
+
+  const confirmCanvasResizeForImport = useCallback((imageWidth: number, imageHeight: number) => {
+    if (imageWidth <= 0 || imageHeight <= 0) return false;
+
+    const currentWidth = canvasConfig.width;
+    const currentHeight = canvasConfig.height;
+    if (imageWidth === currentWidth && imageHeight === currentHeight) {
+      return true;
+    }
+
+    const message = language === 'zh'
+      ? `导入素材尺寸为 ${imageWidth} x ${imageHeight}，当前画布为 ${currentWidth} x ${currentHeight}。\n\n是否将画布尺寸改为导入素材尺寸？\n\n选择“取消”将保持当前画布尺寸，并把导入帧等比居中适配。`
+      : `The imported media is ${imageWidth} x ${imageHeight}, while the current canvas is ${currentWidth} x ${currentHeight}.\n\nResize the canvas to match the imported media?\n\nChoose Cancel to keep the current canvas size and fit the imported frames inside it.`;
+
+    return window.confirm(message);
+  }, [canvasConfig.height, canvasConfig.width, language]);
 
   // Show notification with auto-dismiss
   // Show notification with auto-dismiss
@@ -936,17 +973,24 @@ const App: React.FC = () => {
         return;
       }
 
+      const shouldResizeCanvasOnFirstImport = frames.length === 0
+        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        : false;
+
       if (importConfig.mode === 'insert' && importConfig.insertIndex !== null) {
         const insertIndex = importConfig.insertIndex;
         setAppState(prev => {
-          const nextFrames = [...prev.frames];
-          nextFrames.splice(insertIndex, 0, ...newFrames);
           const shouldSetSize = prev.frames.length === 0;
+          const framesToInsert = shouldSetSize && !shouldResizeCanvasOnFirstImport
+            ? fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height)
+            : newFrames;
+          const nextFrames = [...prev.frames];
+          nextFrames.splice(insertIndex, 0, ...framesToInsert);
 
           return {
             ...prev,
             frames: nextFrames,
-            canvasConfig: shouldSetSize ? {
+            canvasConfig: shouldSetSize && shouldResizeCanvasOnFirstImport ? {
               ...prev.canvasConfig,
               width: firstImageWidth,
               height: firstImageHeight,
@@ -960,35 +1004,23 @@ const App: React.FC = () => {
 
           if (isFirstImport) {
             showNotification(t.autoDisableTransparent);
+            const framesToAdd = shouldResizeCanvasOnFirstImport
+              ? newFrames
+              : fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
+
             return {
               ...prev,
-              frames: [...prev.frames, ...newFrames],
+              frames: [...prev.frames, ...framesToAdd],
               canvasConfig: {
                 ...prev.canvasConfig,
-                width: firstImageWidth,
-                height: firstImageHeight,
+                width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
+                height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
                 transparent: null,
               },
             };
           }
 
-          const canvasWidth = prev.canvasConfig.width;
-          const canvasHeight = prev.canvasConfig.height;
-
-          const scaledFrames = newFrames.map(frame => {
-            const scaleX = canvasWidth / frame.originalWidth;
-            const scaleY = canvasHeight / frame.originalHeight;
-            const scale = Math.min(scaleX, scaleY);
-            const scaledWidth = Math.round(frame.originalWidth * scale);
-            const scaledHeight = Math.round(frame.originalHeight * scale);
-
-            return updateFrameActiveLayer(frame, {
-              width: scaledWidth,
-              height: scaledHeight,
-              x: Math.round((canvasWidth - scaledWidth) / 2),
-              y: Math.round((canvasHeight - scaledHeight) / 2),
-            });
-          });
+          const scaledFrames = fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
 
           return {
             ...prev,
@@ -1039,7 +1071,8 @@ const App: React.FC = () => {
   }, [frames, frameTracks]);
 
   const selectTimelineTime = useCallback((timeMs: number) => {
-    const safeTime = Math.max(0, Math.round(timeMs));
+    const totalDuration = getCompositionDuration(frameTracks, frames);
+    const safeTime = Math.min(Math.max(0, totalDuration - 1), Math.max(0, Math.floor(timeMs)));
     const activeSegment = findFrameAtTime(frames, safeTime);
 
     setPreviewTimeMs(safeTime);
@@ -1626,17 +1659,23 @@ const App: React.FC = () => {
     hideNotification();
 
     if (newFrames.length > 0) {
-      setAppState(prev => {
-        const nextFrames = [...prev.frames];
-        nextFrames.splice(insertTargetIndex, 0, ...newFrames);
+      const shouldResizeCanvasOnFirstImport = frames.length === 0
+        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        : false;
 
+      setAppState(prev => {
         // If it was empty, update canvas size
         const shouldSetSize = prev.frames.length === 0;
+        const framesToInsert = shouldSetSize && !shouldResizeCanvasOnFirstImport
+          ? fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height)
+          : newFrames;
+        const nextFrames = [...prev.frames];
+        nextFrames.splice(insertTargetIndex, 0, ...framesToInsert);
 
         return {
           ...prev,
           frames: nextFrames,
-          canvasConfig: shouldSetSize ? {
+          canvasConfig: shouldSetSize && shouldResizeCanvasOnFirstImport ? {
             ...prev.canvasConfig,
             width: firstImageWidth,
             height: firstImageHeight
@@ -2008,6 +2047,10 @@ const App: React.FC = () => {
     hideNotification();
 
     if (newFrames.length > 0) {
+      const shouldResizeCanvasOnFirstImport = frames.length === 0
+        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        : false;
+
       setAppState(prev => {
         const isFirstImport = prev.frames.length === 0;
         const shouldAskForTransparent = !isFirstImport && hasTransparency && !prev.canvasConfig.transparent && !hasSeenTransparentPrompt;
@@ -2018,43 +2061,24 @@ const App: React.FC = () => {
           if (shouldAutoDisableTransparent) {
             showNotification(t.autoDisableTransparent);
           }
+          const framesToAdd = shouldResizeCanvasOnFirstImport
+            ? newFrames
+            : fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
 
           return {
             ...prev,
-            frames: [...prev.frames, ...newFrames],
+            frames: [...prev.frames, ...framesToAdd],
             canvasConfig: {
               ...prev.canvasConfig,
-              width: firstImageWidth,
-              height: firstImageHeight,
+              width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
+              height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
               transparent: hasTransparency ? 'rgba(0,0,0,0)' : null
             }
           };
         }
 
         // Non-first import: scale frames to fit canvas while maintaining aspect ratio
-        const canvasWidth = prev.canvasConfig.width;
-        const canvasHeight = prev.canvasConfig.height;
-
-        const scaledFrames = newFrames.map(frame => {
-          // Calculate scale to fit within canvas while maintaining aspect ratio
-          const scaleX = canvasWidth / frame.originalWidth;
-          const scaleY = canvasHeight / frame.originalHeight;
-          const scale = Math.min(scaleX, scaleY);
-
-          const scaledWidth = Math.round(frame.originalWidth * scale);
-          const scaledHeight = Math.round(frame.originalHeight * scale);
-
-          // Center the frame on canvas
-          const x = Math.round((canvasWidth - scaledWidth) / 2);
-          const y = Math.round((canvasHeight - scaledHeight) / 2);
-
-          return updateFrameActiveLayer(frame, {
-            width: scaledWidth,
-            height: scaledHeight,
-            x,
-            y
-          });
-        });
+        const scaledFrames = fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
 
         // Non-first import: ask user if they want to enable transparency
         if (shouldAskForTransparent) {
@@ -3365,6 +3389,11 @@ const App: React.FC = () => {
     }
     return frames;
   }, [frames, activeDragId, selectedFrameIds, isGathering]);
+  const activeFrameTrackIndex = frameTracks.findIndex(track => track.id === activeFrameTrackId);
+  const activeFrameTrack = activeFrameTrackIndex >= 0 ? frameTracks[activeFrameTrackIndex] : null;
+  const activeFrameTrackName = activeFrameTrack?.name || `${language === 'zh' ? '轨道' : 'Track'} ${activeFrameTrackIndex + 1 || 1}`;
+  const activeFrameTrackLabel = language === 'zh' ? '当前查看轨道' : 'Viewing track';
+  const activeFrameTrackCountLabel = language === 'zh' ? `${frames.length} 帧` : `${frames.length} frames`;
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden" onDragEnter={handleDrag}>
@@ -3606,8 +3635,6 @@ const App: React.FC = () => {
               hideEditor: t.hideEditor,
               selectFrameToEdit: t.selectFrameToEdit,
               frameInfo: t.frameInfo,
-              selectedFrames: t.selectedFrames,
-              batchMode: t.batchMode,
               frame: t.frame,
               preview: t.preview,
               exportInPoint: t.exportInPoint,
@@ -3684,6 +3711,8 @@ const App: React.FC = () => {
                   frameSize: t.frameSize,
                   compactMode: t.compactMode,
                   batchSelectMode: t.batchSelectMode,
+                  selectedFrames: t.selectedFrames,
+                  batchMode: t.batchMode,
                   selectionProperties: t.selectionProperties,
                   showEditor: t.showEditor,
                   hideEditor: t.hideEditor,
@@ -3704,6 +3733,18 @@ const App: React.FC = () => {
                 onDuplicate={handleDuplicate}
                 onResetProperties={handleResetFrameProperties}
               />
+              {frameTracks.length > 0 && (
+                <div className="flex shrink-0 items-center justify-between border-b border-gray-800 bg-gray-950/80 px-4 py-1.5 text-xs">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-gray-500">{activeFrameTrackLabel}</span>
+                    <span className="shrink-0 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">
+                      {activeFrameTrackIndex >= 0 ? activeFrameTrackIndex + 1 : 1}
+                    </span>
+                    <span className="min-w-0 truncate font-medium text-gray-300">{activeFrameTrackName}</span>
+                  </div>
+                  <span className="shrink-0 font-mono text-[10px] text-gray-500">{activeFrameTrackCountLabel}</span>
+                </div>
+              )}
 
               {frames.length === 0 ? (
                 <div

@@ -1,5 +1,5 @@
 import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
-import { createCompositionTimeline } from './frameTrackTiming';
+import { createCompositionTimeline, findFrameAtTime } from './frameTrackTiming';
 import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
 
 export interface WebPStatusTexts {
@@ -198,15 +198,21 @@ export const generateWebP = async (
     const frame = framesToRender[i];
     if (onStatus) onStatus(format(t.processingFrameN, i + 1, framesToRender.length));
 
-    if (frameTracks.length > 0) {
+    if (frameTracks.length > 1) {
       await renderFrameTracksToCanvas(frameTracks, frame, config, ctx, {
         timelineFrameIndex: i,
         timelineTimeMs: compositionSegments?.[i]?.start,
         imageCache,
       });
     } else {
-      await renderFrameToCanvas(frame, config, ctx, {
-        timelineFrameIndex: i,
+      const singleTrackFrame = frameTracks.length === 1 && compositionSegments?.[i]
+        ? findFrameAtTime(frameTracks[0].frames, compositionSegments[i].start)?.frame
+        : null;
+      await renderFrameToCanvas(singleTrackFrame ?? frame, config, ctx, {
+        timelineFrameIndex: singleTrackFrame
+          ? frameTracks[0].frames.findIndex(item => item.id === singleTrackFrame.id)
+          : i,
+        timelineTimeMs: singleTrackFrame ? undefined : compositionSegments?.[i]?.start,
         globalLayers,
         layerTracks,
         imageCache,

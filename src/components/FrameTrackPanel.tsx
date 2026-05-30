@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, Lock, Magnet, MoreVertical, Plus, Trash2, Unlock } from 'lucide-react';
+import { Eye, EyeOff, Lock, Magnet, MoreVertical, Plus, SlidersHorizontal, Trash2, Unlock } from 'lucide-react';
 import type { FrameTrack } from '../types';
 import { getCompositionDuration, getFrameDuration, getTrackFrameSegments } from '../utils/frameTrackTiming';
 
@@ -9,6 +9,8 @@ interface FrameTrackPanelProps {
   activeTrackId: string | null;
   currentFrameIndex: number;
   currentTimeMs: number;
+  trackLabelWidth?: number;
+  embedded?: boolean;
   labels: {
     title: string;
     empty: string;
@@ -20,6 +22,16 @@ interface FrameTrackPanelProps {
     unlocked: string;
     add: string;
     delete: string;
+    inPoint: string;
+    outPoint: string;
+    clearRange: string;
+  };
+  exportControls?: {
+    canSetRange: boolean;
+    hasRange: boolean;
+    onSetInPoint: () => void;
+    onSetOutPoint: () => void;
+    onClearRange: () => void;
   };
   onSelectTrack: (trackId: string) => void;
   onSelectFrame: (index: number) => void;
@@ -34,7 +46,10 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
   activeTrackId,
   currentFrameIndex,
   currentTimeMs,
+  trackLabelWidth = 164,
+  embedded = false,
   labels,
+  exportControls,
   onSelectTrack,
   onSelectFrame,
   onSelectTime,
@@ -56,6 +71,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [isSnapEnabled, setIsSnapEnabled] = useState(true);
+  const [isPreviewMode, setIsPreviewMode] = useState(true);
   const totalDuration = getCompositionDuration(tracks);
   const playheadPercent = totalDuration > 0
     ? (Math.min(totalDuration, Math.max(0, currentTimeMs)) / totalDuration) * 100
@@ -100,7 +116,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
 
     const rect = target.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return Math.round(ratio * totalDuration);
+    return Math.min(Math.max(0, totalDuration - 1), Math.floor(ratio * totalDuration));
   };
 
   const selectTimeFromPointer = (trackId: string, target: HTMLButtonElement, clientX: number) => {
@@ -158,13 +174,37 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     }
 
     if (isSnapEnabled) {
-      const snapTargets = [previousEnd, Number.isFinite(nextStart) ? nextStart - duration : null, 0]
-        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+      const boundaryTargets = new Set<number>([0, previousEnd]);
+      if (Number.isFinite(nextStart)) {
+        boundaryTargets.add(nextStart);
+      }
 
-      for (const target of snapTargets) {
-        if (Math.abs(nextStartTime - target) <= SNAP_THRESHOLD_MS) {
-          nextStartTime = target;
-          break;
+      tracks.forEach(candidateTrack => {
+        getTrackFrameSegments(candidateTrack.frames).forEach(segment => {
+          if (candidateTrack.id === track.id && segment.frame.id === frameId) return;
+          boundaryTargets.add(segment.start);
+          boundaryTargets.add(segment.end);
+        });
+      });
+
+      const snapCandidates = Array.from(boundaryTargets)
+        .filter(target => Number.isFinite(target))
+        .flatMap(target => [
+          { start: target, distance: Math.abs(nextStartTime - target) },
+          { start: target - duration, distance: Math.abs((nextStartTime + duration) - target) },
+        ])
+        .filter(candidate => candidate.distance <= SNAP_THRESHOLD_MS)
+        .sort((a, b) => a.distance - b.distance);
+
+      const snapped = snapCandidates.find(candidate => {
+        const start = Math.max(minStart, candidate.start);
+        return Number.isFinite(maxStart) ? start <= maxStart : true;
+      });
+
+      if (snapped) {
+        nextStartTime = Math.max(minStart, snapped.start);
+        if (Number.isFinite(maxStart)) {
+          nextStartTime = Math.min(maxStart, nextStartTime);
         }
       }
     }
@@ -247,7 +287,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
         onClick={(event) => event.stopPropagation()}
       >
         <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-          {labels.track} {openTrackNumber}
+          {openTrackNumber}
         </label>
         <input
           value={openTrack.name}
@@ -305,10 +345,63 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     : null;
 
   return (
-    <div className="shrink-0 border-t border-gray-800 bg-gray-950/95 px-4 py-1.5">
+    <div className={embedded ? '' : 'shrink-0 border-t border-gray-800 bg-gray-950/95 px-4 py-1.5'}>
       <div className="mb-1.5 flex items-center justify-between">
         <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">{labels.title}</div>
         <div className="flex items-center gap-1.5">
+          {exportControls && (
+            <div className="flex items-center gap-1 border-r border-gray-800 pr-1.5">
+              <button
+                type="button"
+                onClick={exportControls.onSetInPoint}
+                disabled={!exportControls.canSetRange}
+                className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-700 disabled:hover:text-gray-300"
+                title="将当前时间设置为导出入点"
+              >
+                设置入点
+              </button>
+              <button
+                type="button"
+                onClick={exportControls.onSetOutPoint}
+                disabled={!exportControls.canSetRange}
+                className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-700 disabled:hover:text-gray-300"
+                title="将当前时间设置为导出出点"
+              >
+                设置出点
+              </button>
+              <button
+                type="button"
+                onClick={exportControls.onClearRange}
+                disabled={!exportControls.hasRange}
+                className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:border-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-700 disabled:hover:text-gray-300"
+                title="清除已设置的导出入点和出点"
+              >
+                {labels.clearRange}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setIsPreviewMode(value => {
+                if (!value) {
+                  movingFrameRef.current = null;
+                }
+                return !value;
+              });
+            }}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${isPreviewMode
+              ? 'border-blue-500/60 bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
+              : 'border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+              }`}
+            title={isPreviewMode
+              ? '预览模式：拖动任意轨道或帧块只移动预览时间，不调整帧位置'
+              : '调节模式：可拖动帧块调整开始时间；拖空白区域仍移动预览时间'
+            }
+          >
+            <SlidersHorizontal size={12} />
+            {isPreviewMode ? '预览' : '调节'}
+          </button>
           <button
             type="button"
             onClick={() => setIsSnapEnabled(value => !value)}
@@ -337,7 +430,9 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
           {labels.empty}
         </div>
       ) : (
-        <div className="max-h-56 overflow-y-auto rounded border border-gray-800 bg-gray-950 custom-scrollbar">
+        <div
+          className={`max-h-56 overflow-x-hidden overflow-y-auto border border-gray-800 bg-gray-950 custom-scrollbar ${embedded ? 'rounded-t border-b-0' : 'rounded'}`}
+        >
           {renderedTracks.map((track, visualIndex) => {
             const isActive = track.id === activeTrackId;
             const trackNumber = tracks.length - visualIndex;
@@ -346,7 +441,8 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
             return (
               <div
                 key={track.id}
-                className={`group relative grid grid-cols-[164px_minmax(0,1fr)] border-b border-gray-800 last:border-b-0 ${isActive ? 'bg-blue-500/10' : 'bg-gray-900/70'}`}
+                className={`group relative grid border-b border-gray-800 last:border-b-0 ${isActive ? 'bg-blue-500/10' : 'bg-gray-900/70'}`}
+                style={{ gridTemplateColumns: `${trackLabelWidth}px minmax(0, 1fr)` }}
               >
                 <div className={`relative flex min-w-0 items-center border-r border-gray-800 ${isActive ? 'shadow-[inset_3px_0_0_rgba(59,130,246,0.95)]' : ''}`}>
                   <button
@@ -355,7 +451,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
                     className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-left hover:bg-gray-800/70"
                   >
                     <span className={`shrink-0 font-mono text-[10px] ${isActive ? 'text-blue-300' : 'text-gray-500'}`}>
-                      {labels.track} {trackNumber}
+                      {trackNumber}
                     </span>
                     <span className={`min-w-0 flex-1 truncate text-xs font-medium ${track.visible ? 'text-gray-300' : 'text-gray-600'}`}>
                       {track.name}
@@ -398,21 +494,30 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
                   className="relative h-7 w-full cursor-pointer select-none touch-none bg-gray-900 px-0 py-0 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/40"
                 >
                   <div className="relative h-full overflow-hidden bg-gray-800">
-                    {getTrackFrameSegments(track.frames).map((segment) => {
+                    {getTrackFrameSegments(track.frames).map((segment, segmentIndex, segments) => {
                       const left = `${(segment.start / totalDuration) * 100}%`;
                       const width = `${(segment.duration / totalDuration) * 100}%`;
+                      const isLastSegment = segmentIndex === segments.length - 1;
+                      const isCurrentSegment = currentTimeMs >= segment.start && currentTimeMs < segment.end;
 
                       return (
                         <div
                           key={segment.frame.id}
-                          className={`absolute top-0 h-full border-r border-gray-950/60 transition-colors ${isActive ? 'bg-blue-500/75' : 'bg-gray-700'}`}
+                          className={`absolute top-0 h-full ${isLastSegment ? '' : 'border-r border-gray-950/60'} ${isCurrentSegment ? 'bg-blue-500' : 'bg-gray-700'}`}
                           style={{ left, width }}
                           title={`Frame ${segment.index + 1} - ${segment.start}ms / ${segment.duration}ms`}
-                          onPointerDown={(event) => handleFramePointerDown(track, segment.frame.id, segment.start, event)}
-                          onPointerMove={handleFramePointerMove}
-                          onPointerUp={stopFrameDragging}
-                          onPointerCancel={stopFrameDragging}
-                        />
+                          onPointerDown={isPreviewMode ? undefined : (event) => handleFramePointerDown(track, segment.frame.id, segment.start, event)}
+                          onPointerMove={isPreviewMode ? undefined : handleFramePointerMove}
+                          onPointerUp={isPreviewMode ? undefined : stopFrameDragging}
+                          onPointerCancel={isPreviewMode ? undefined : stopFrameDragging}
+                        >
+                          {segment.frame.colorTag && (
+                            <div
+                              className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5"
+                              style={{ backgroundColor: segment.frame.colorTag }}
+                            />
+                          )}
+                        </div>
                       );
                     })}
                   </div>

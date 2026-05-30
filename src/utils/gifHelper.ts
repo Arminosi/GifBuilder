@@ -1,7 +1,7 @@
 
 import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
 import GIF from 'gif.js';
-import { createCompositionTimeline } from './frameTrackTiming';
+import { createCompositionTimeline, findFrameAtTime } from './frameTrackTiming';
 import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
 
 // Cache the worker blob URL to avoid fetching it every time
@@ -559,11 +559,18 @@ export const generateGIF = async (
                 : null,
             };
 
-            if (frameTracks.length > 0) {
+            if (frameTracks.length > 1) {
               await renderFrameTracksToCanvas(frameTracks, frame, currentConfig, ctx, renderOptions);
             } else {
-              await renderFrameToCanvas(frame, currentConfig, ctx, {
+              const singleTrackFrame = frameTracks.length === 1 && compositionSegments?.[i]
+                ? findFrameAtTime(frameTracks[0].frames, compositionSegments[i].start)?.frame
+                : null;
+              await renderFrameToCanvas(singleTrackFrame ?? frame, currentConfig, ctx, {
                 ...renderOptions,
+                timelineTimeMs: singleTrackFrame ? undefined : renderOptions.timelineTimeMs,
+                timelineFrameIndex: singleTrackFrame
+                  ? frameTracks[0].frames.findIndex(item => item.id === singleTrackFrame.id)
+                  : renderOptions.timelineFrameIndex,
                 globalLayers,
                 layerTracks,
               });
