@@ -5,6 +5,7 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import { FrameData } from '../types';
 import { FrameItem } from './FrameItem';
 import { FrameLabels } from '../utils/translations';
+import { getTrackFrameSegments } from '../utils/frameTrackTiming';
 
 export interface VirtualFrameListHandle {
   scrollToItem: (index: number) => void;
@@ -54,7 +55,9 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     isLayoutAnimating,
     isHorizontal,
     transparentColor,
-    isTransparentEnabled
+    isTransparentEnabled,
+    gapBeforeByIndex,
+    startTimeByIndex
   } = data;
 
   const startIndex = index * columnCount;
@@ -79,7 +82,16 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             width: frameWidth, 
             height: itemHeight - GAP, // Subtract gap from height to maintain spacing
           }}
+          className="relative"
         >
+          {gapBeforeByIndex[startIndex + i] > 0 && (
+            <div
+              className={`pointer-events-none absolute z-20 whitespace-nowrap rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 shadow-sm ${i === 0 ? 'left-1 top-1' : '-left-2 top-1 -translate-x-full'}`}
+              title={`Empty gap: ${gapBeforeByIndex[startIndex + i]}ms`}
+            >
+              空白 {gapBeforeByIndex[startIndex + i]}ms
+            </div>
+          )}
           <FrameItem
             frame={frame}
             index={startIndex + i}
@@ -96,6 +108,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             isGathering={isGathering}
             frameWidth={frameWidth}
             isHorizontal={isHorizontal}
+            timelineStartTime={startTimeByIndex[startIndex + i]}
             transparentColor={transparentColor}
             isTransparentEnabled={isTransparentEnabled}
           />
@@ -171,7 +184,7 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
 
           // Calculate potential vertical height first
           // Reduced height since inputs are more compact now
-          const potentialVerticalHeight = frameWidth + 160;
+          const potentialVerticalHeight = frameWidth + 188;
           
           // Determine final layout
           // Only use horizontal if not in compact mode
@@ -179,18 +192,25 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
           
           let itemHeight;
           if (compactMode) {
-            itemHeight = frameWidth + 60;
+            itemHeight = frameWidth + GAP;
           } else if (isHorizontal) {
             // Horizontal layout
             // Scale height with width, but maintain minimum for inputs
             // Inputs need ~120px + padding/header
-            itemHeight = Math.max(200, frameWidth * 0.6);
+            itemHeight = Math.max(220, frameWidth * 0.6);
           } else {
             // Vertical layout
             itemHeight = potentialVerticalHeight;
           } 
 
           const rowCount = Math.ceil(frames.length / safeColumnCount);
+          const trackSegments = getTrackFrameSegments(frames);
+          const gapBeforeByIndex = trackSegments.map((segment, index) => {
+            if (index === 0) return 0;
+            const previous = trackSegments[index - 1];
+            return Math.max(0, segment.start - previous.end);
+          });
+          const startTimeByIndex = trackSegments.map(segment => segment.start);
 
           return (
             <List
@@ -219,7 +239,9 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 isLayoutAnimating,
                 isHorizontal,
                 transparentColor,
-                isTransparentEnabled
+                isTransparentEnabled,
+                gapBeforeByIndex,
+                startTimeByIndex
               }}
             >
               {Row}

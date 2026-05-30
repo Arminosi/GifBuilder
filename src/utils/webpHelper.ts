@@ -1,4 +1,6 @@
-import { FrameData, CanvasConfig } from '../types';
+import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
+import { createCompositionTimeline, findFrameAtTime } from './frameTrackTiming';
+import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
 
 export interface WebPStatusTexts {
   initializing: string;
@@ -143,7 +145,10 @@ export const generateWebP = async (
   config: CanvasConfig,
   onProgress: (progress: number) => void,
   onStatus?: (status: string) => void,
-  texts?: WebPStatusTexts
+  texts?: WebPStatusTexts,
+  globalLayers: LayerData[] = [],
+  layerTracks: LayerTrack[] = [],
+  frameTracks: FrameTrack[] = []
 ): Promise<Blob> => {
   const t = texts || {
     initializing: 'Initializing WebP encoder...',
@@ -170,58 +175,48 @@ export const generateWebP = async (
     throw new Error('Could not create canvas context');
   }
 
-  let backgroundImage: HTMLImageElement | null = null;
-  if (config.backgroundImage && !config.transparent) {
-    try {
-      backgroundImage = await loadImage(config.backgroundImage);
-    } catch (error) {
-      console.warn('Failed to load WebP background image', error);
-    }
-  }
-
   if (onStatus) onStatus(t.processingFrames);
 
   const frameChunks: Uint8Array[] = [];
   let hasAlpha = Boolean(config.transparent);
   const isLossless = config.webpLossless === true;
   const lossyQuality = Math.min(100, Math.max(0, config.webpQuality ?? 92)) / 100;
+  const imageCache = new Map<string, HTMLImageElement>();
+  const firstTrackFrame = frameTracks.flatMap(track => track.frames)[0];
+  const compositionSegments = frameTracks.length > 0 && (frames[0] || firstTrackFrame)
+    ? createCompositionTimeline(frameTracks, frames)
+    : null;
+  const framesToRender = compositionSegments
+    ? compositionSegments.map((segment, index) => ({
+      ...(frames[0] ?? firstTrackFrame),
+      id: `composition-${index}`,
+      duration: segment.duration,
+    }))
+    : frames;
 
-  for (let i = 0; i < frames.length; i++) {
-    const frame = frames[i];
-    if (onStatus) onStatus(format(t.processingFrameN, i + 1, frames.length));
+  for (let i = 0; i < framesToRender.length; i++) {
+    const frame = framesToRender[i];
+    if (onStatus) onStatus(format(t.processingFrameN, i + 1, framesToRender.length));
 
-    const img = await loadImage(frame.previewUrl);
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (!config.transparent) {
-      ctx.fillStyle = config.backgroundColor || '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      if (backgroundImage) {
-        const bgX = config.backgroundImageX || 0;
-        const bgY = config.backgroundImageY || 0;
-        const bgWidth = config.backgroundImageDisplayWidth || config.width;
-        const bgHeight = config.backgroundImageDisplayHeight || config.height;
-        ctx.drawImage(backgroundImage, bgX, bgY, bgWidth, bgHeight);
-      }
-    }
-
-    if (frame.rotation) {
-      ctx.save();
-      const cx = frame.x + frame.width / 2;
-      const cy = frame.y + frame.height / 2;
-      ctx.translate(cx, cy);
-      ctx.rotate((frame.rotation * Math.PI) / 180);
-
-      if (Math.abs(frame.rotation % 180) === 90) {
-        ctx.drawImage(img, -frame.height / 2, -frame.width / 2, frame.height, frame.width);
-      } else {
-        ctx.drawImage(img, -frame.width / 2, -frame.height / 2, frame.width, frame.height);
-      }
-      ctx.restore();
+    if (frameTracks.length > 1) {
+      await renderFrameTracksToCanvas(frameTracks, frame, config, ctx, {
+        timelineFrameIndex: i,
+        timelineTimeMs: compositionSegments?.[i]?.start,
+        imageCache,
+      });
     } else {
-      ctx.drawImage(img, frame.x, frame.y, frame.width, frame.height);
+      const singleTrackFrame = frameTracks.length === 1 && compositionSegments?.[i]
+        ? findFrameAtTime(frameTracks[0].frames, compositionSegments[i].start)?.frame
+        : null;
+      await renderFrameToCanvas(singleTrackFrame ?? frame, config, ctx, {
+        timelineFrameIndex: singleTrackFrame
+          ? frameTracks[0].frames.findIndex(item => item.id === singleTrackFrame.id)
+          : i,
+        timelineTimeMs: singleTrackFrame ? undefined : compositionSegments?.[i]?.start,
+        globalLayers,
+        layerTracks,
+        imageCache,
+      });
     }
 
     const webpBlob = isLossless
@@ -240,7 +235,7 @@ export const generateWebP = async (
     framePayload.set(extracted.bytes, 16);
     frameChunks.push(makeChunk('ANMF', framePayload));
 
-    onProgress((i + 1) / frames.length);
+    onProgress((i + 1) / framesToRender.length);
   }
 
   const vp8xPayload = new Uint8Array(10);

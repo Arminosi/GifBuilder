@@ -39,6 +39,8 @@ interface FrameListControlsProps {
     frameSize: string;
     compactMode: string;
     batchSelectMode: string;
+    selectedFrames: string;
+    batchMode: string;
     selectionProperties: string;
     showEditor: string;
     hideEditor: string;
@@ -136,6 +138,12 @@ export const FrameListControls: React.FC<FrameListControlsProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {selectedCount > 1 && (
+            <div className="rounded-full border border-blue-700/70 bg-blue-950/70 px-2.5 py-1 text-xs font-medium text-blue-200">
+              {labels.selectedFrames.replace('{count}', selectedCount.toString())} ({labels.batchMode})
+            </div>
+          )}
+
           <button
             onClick={() => onBatchSelectModeChange(!isBatchSelectMode)}
             className={`p-1.5 lg:px-2.5 rounded transition-colors flex items-center gap-1.5 ${isBatchSelectMode
