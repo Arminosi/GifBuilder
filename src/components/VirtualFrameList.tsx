@@ -3,7 +3,7 @@ import { FixedSizeList as List, areEqual } from 'react-window';
 import type { ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FrameData } from '../types';
-import { FrameItem } from './FrameItem';
+import { FrameItem, FrameDurationExtendAction } from './FrameItem';
 import { FrameLabels } from '../utils/translations';
 import { getTrackFrameSegments } from '../utils/frameTrackTiming';
 
@@ -30,16 +30,17 @@ interface VirtualFrameListProps {
   onCompactModeChange?: (isCompact: boolean) => void;
   transparentColor?: string;
   isTransparentEnabled?: boolean;
+  tailFillTargetTimeMs?: number | null;
 }
 
 const GAP = 16; // gap-4 (1rem)
 const PADDING = 24; // p-6 (1.5rem)
 
 const Row = memo(({ index, style, data }: ListChildComponentProps) => {
-  const { 
-    frames, 
-    columnCount, 
-    frameWidth, 
+  const {
+    frames,
+    columnCount,
+    frameWidth,
     itemHeight,
     compactMode,
     selectedFrameIds,
@@ -56,42 +57,33 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
     isHorizontal,
     transparentColor,
     isTransparentEnabled,
-    gapBeforeByIndex,
-    startTimeByIndex
+    startTimeByIndex,
+    extendDurationActionByIndex,
   } = data;
 
   const startIndex = index * columnCount;
-  // Get frames for this row
   const rowFrames = frames.slice(startIndex, startIndex + columnCount);
 
   return (
-    <div 
+    <div
       style={{
         ...style,
         paddingLeft: PADDING,
         paddingRight: PADDING,
         boxSizing: 'border-box',
         transition: isLayoutAnimating ? 'top 0.3s cubic-bezier(0.25, 1, 0.5, 1), left 0.3s cubic-bezier(0.25, 1, 0.5, 1)' : 'none'
-      }} 
+      }}
       className="flex gap-4"
     >
       {rowFrames.map((frame: FrameData, i: number) => (
-        <div 
-          key={frame.id} 
-          style={{ 
-            width: frameWidth, 
-            height: itemHeight - GAP, // Subtract gap from height to maintain spacing
+        <div
+          key={frame.id}
+          style={{
+            width: frameWidth,
+            height: itemHeight - GAP,
           }}
-          className="relative"
+          className="relative shrink-0"
         >
-          {gapBeforeByIndex[startIndex + i] > 0 && (
-            <div
-              className={`pointer-events-none absolute z-20 whitespace-nowrap rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 shadow-sm ${i === 0 ? 'left-1 top-1' : '-left-2 top-1 -translate-x-full'}`}
-              title={`Empty gap: ${gapBeforeByIndex[startIndex + i]}ms`}
-            >
-              空白 {gapBeforeByIndex[startIndex + i]}ms
-            </div>
-          )}
           <FrameItem
             frame={frame}
             index={startIndex + i}
@@ -111,6 +103,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
             timelineStartTime={startTimeByIndex[startIndex + i]}
             transparentColor={transparentColor}
             isTransparentEnabled={isTransparentEnabled}
+            extendDurationAction={extendDurationActionByIndex[startIndex + i]}
           />
         </div>
       ))}
@@ -136,7 +129,8 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
   layoutMode = 'auto',
   onCompactModeChange,
   transparentColor,
-  isTransparentEnabled
+  isTransparentEnabled,
+  tailFillTargetTimeMs
 }, ref) => {
   const listRef = useRef<List>(null);
   const columnCountRef = useRef<number>(1);
@@ -203,14 +197,24 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
             itemHeight = potentialVerticalHeight;
           } 
 
-          const rowCount = Math.ceil(frames.length / safeColumnCount);
           const trackSegments = getTrackFrameSegments(frames);
-          const gapBeforeByIndex = trackSegments.map((segment, index) => {
-            if (index === 0) return 0;
-            const previous = trackSegments[index - 1];
-            return Math.max(0, segment.start - previous.end);
-          });
           const startTimeByIndex = trackSegments.map(segment => segment.start);
+          const extendDurationActionByIndex: Array<FrameDurationExtendAction | undefined> = trackSegments.map((segment, frameIndex) => {
+            const nextSegment = trackSegments[frameIndex + 1];
+            const gapAfter = nextSegment
+              ? Math.max(0, nextSegment.start - segment.end)
+              : Math.max(0, (tailFillTargetTimeMs ?? segment.end) - segment.end);
+            return gapAfter > 0
+              ? {
+                label: nextSegment ? labels.extendToNextFrame : labels.extendToOutPoint,
+                title: nextSegment
+                  ? `${labels.extendToNextFrame}: +${gapAfter}ms`
+                  : `${labels.extendToOutPoint}: +${gapAfter}ms`,
+                targetDuration: Math.max(1, (nextSegment?.start ?? tailFillTargetTimeMs ?? segment.end) - segment.start),
+              }
+              : undefined;
+          });
+          const rowCount = Math.ceil(frames.length / safeColumnCount);
 
           return (
             <List
@@ -240,8 +244,8 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
                 isHorizontal,
                 transparentColor,
                 isTransparentEnabled,
-                gapBeforeByIndex,
-                startTimeByIndex
+                startTimeByIndex,
+                extendDurationActionByIndex,
               }}
             >
               {Row}

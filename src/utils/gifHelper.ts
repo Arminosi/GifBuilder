@@ -135,6 +135,10 @@ const findCommonUnusedColor = async (frames: FrameData[], alphaThreshold: number
     const allUsedColors = new Set<number>();
 
     for (const frame of frames) {
+      if (frame.isBlank || !frame.previewUrl) {
+        continue;
+      }
+
       const img = await loadImage(frame.previewUrl);
       canvas.width = img.width;
       canvas.height = img.height;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Minimize2, Play, ScanEye } from 'lucide-react';
+import { Crosshair, Layout, Minimize2, Play, ScanEye } from 'lucide-react';
 import type { CanvasConfig, FrameData, FrameTrack, LayerData } from '../types';
 import type { FrameLabels, TranslationSchema } from '../utils/translations';
 import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from '../utils/frameTrackTiming';
@@ -29,6 +29,7 @@ interface CanvasWorkspaceProps {
   previewFrameIndex: number | null;
   previewTimeMs: number | null;
   syncPreviewSelection: boolean;
+  autoJumpToSelectedFrame: boolean;
   exportInFrameIndex: number | null;
   exportOutFrameIndex: number | null;
   config: CanvasConfig;
@@ -41,6 +42,8 @@ interface CanvasWorkspaceProps {
     canvasEditor: string;
     unlinkSelection: string;
     linkSelection: string;
+    enableAutoJumpToSelection: string;
+    disableAutoJumpToSelection: string;
     hideEditor: string;
     selectFrameToEdit: string;
     frameInfo: string;
@@ -60,14 +63,19 @@ interface CanvasWorkspaceProps {
     locked: string;
     unlocked: string;
     deleteLayer: string;
+    moveTrackUp: string;
+    moveTrackDown: string;
   };
   onSyncPreviewSelectionChange: (enabled: boolean) => void;
+  onAutoJumpToSelectedFrameChange: (enabled: boolean) => void;
   onPlayingChange: (playing: boolean) => void;
   onHideEditor: () => void;
   onCanvasUpdate: (updates: Partial<FrameData>, commit?: boolean) => void;
   onSelectLayer?: (layerId: string) => void;
   onSelectFrameTrack: (trackId: string) => void;
+  onSelectFrameBlock: (frameId: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) => void;
   onUpdateFrameTrack: (trackId: string, updates: Partial<FrameTrack>) => void;
+  onMoveFrameTrack: (trackId: string, direction: 'up' | 'down') => void;
   onAddFrameTrack: () => void;
   onDeleteFrameTrack: (trackId: string) => void;
   onColorPick: (color: string) => void;
@@ -159,6 +167,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   previewFrameIndex,
   previewTimeMs,
   syncPreviewSelection,
+  autoJumpToSelectedFrame,
   exportInFrameIndex,
   exportOutFrameIndex,
   config,
@@ -169,12 +178,15 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   isBgColorEyeDropperActive,
   labels,
   onSyncPreviewSelectionChange,
+  onAutoJumpToSelectedFrameChange,
   onPlayingChange,
   onHideEditor,
   onCanvasUpdate,
   onSelectLayer,
   onSelectFrameTrack,
+  onSelectFrameBlock,
   onUpdateFrameTrack,
+  onMoveFrameTrack,
   onAddFrameTrack,
   onDeleteFrameTrack,
   onColorPick,
@@ -390,7 +402,21 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           {hasPlayableContent && (
             <>
               <button
+                type="button"
+                onClick={() => onAutoJumpToSelectedFrameChange(!autoJumpToSelectedFrame)}
+                aria-pressed={autoJumpToSelectedFrame}
+                className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${autoJumpToSelectedFrame
+                  ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                  : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
+                  }`}
+                title={autoJumpToSelectedFrame ? labels.disableAutoJumpToSelection : labels.enableAutoJumpToSelection}
+              >
+                <Crosshair size={16} />
+              </button>
+              <button
+                type="button"
                 onClick={() => onSyncPreviewSelectionChange(!syncPreviewSelection)}
+                aria-pressed={syncPreviewSelection}
                 className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${syncPreviewSelection
                   ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
                   : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300'
@@ -400,6 +426,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 <ScanEye size={16} />
               </button>
               <button
+                type="button"
                 onClick={() => onPlayingChange(!isPlaying)}
                 className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${isPlaying
                   ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
@@ -409,7 +436,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               >
                 {isPlaying ? <div className="w-3 h-3 bg-current rounded-sm" /> : <Play size={12} fill="currentColor" />}
                 {isPlaying ? labels.preview.pause : labels.preview.play}
-                <kbd className="ml-1 rounded border border-current/30 px-1 text-[10px] opacity-70">Space</kbd>
               </button>
             </>
           )}
@@ -454,6 +480,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           <FrameTrackPanel
             tracks={frameTracks}
             activeTrackId={activeFrameTrackId}
+            selectedFrameIds={selectedFrameIds}
             currentFrameIndex={currentTimelineFrameIndex}
             currentTimeMs={currentTimelineTimeMs}
             labels={{
@@ -466,6 +493,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               locked: labels.locked,
               unlocked: labels.unlocked,
               delete: labels.deleteLayer,
+              moveUp: labels.moveTrackUp,
+              moveDown: labels.moveTrackDown,
               track: 'Track',
               inPoint: labels.exportInPoint,
               outPoint: labels.exportOutPoint,
@@ -480,8 +509,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             }}
             onSelectTrack={onSelectFrameTrack}
             onSelectFrame={onSelectFrameByIndex}
+            onSelectFrameBlock={onSelectFrameBlock}
             onSelectTime={onSelectTimelineTime}
             onUpdateTrack={onUpdateFrameTrack}
+            onMoveTrack={onMoveFrameTrack}
             onAddTrack={onAddFrameTrack}
             onDeleteTrack={onDeleteFrameTrack}
             trackLabelWidth={FRAME_TRACK_LABEL_WIDTH}
