@@ -6,6 +6,10 @@ export interface FrameLabels {
   y: string;
   w: string;
   h: string;
+  extendToNextFrame: string;
+  extendToOutPoint: string;
+  blankFrame: string;
+  replaceImage: string;
 }
 
 export interface TranslationSchema {
@@ -88,6 +92,8 @@ export interface TranslationSchema {
     paste: string;
     duplicateHere: string;
     insertHere: string;
+    addBlankFrame: string;
+    replaceFrameImage: string;
     reverseSelected: string;
     resetProperties: string;
     alignCenter: string;
@@ -274,7 +280,11 @@ export const translations: Record<Language, TranslationSchema> = {
       x: "X Pos",
       y: "Y Pos",
       w: "Width",
-      h: "Height"
+      h: "Height",
+      extendToNextFrame: "Extend to next frame",
+      extendToOutPoint: "Extend to out point",
+      blankFrame: "Blank frame",
+      replaceImage: "Replace image"
     },
     selectedFrames: "{count} Frames Selected",
     selectionProperties: "Selection Properties",
@@ -296,6 +306,8 @@ export const translations: Record<Language, TranslationSchema> = {
       paste: "Paste (Ctrl+V)",
       duplicateHere: "Duplicate Selected Here",
       insertHere: "Insert Images Here",
+      addBlankFrame: "Add Blank Time",
+      replaceFrameImage: "Replace Frame Image",
       reverseSelected: "Reverse Selected Frames",
       resetProperties: "Reset Properties",
       alignCenter: "Align Center",
@@ -476,7 +488,11 @@ export const translations: Record<Language, TranslationSchema> = {
       x: "X 坐标",
       y: "Y 坐标",
       w: "宽度",
-      h: "高度"
+      h: "高度",
+      extendToNextFrame: "持续到下一帧",
+      extendToOutPoint: "持续到出点",
+      blankFrame: "空白帧",
+      replaceImage: "替换图片"
     },
     selectedFrames: "已选择 {count} 帧",
     selectionProperties: "选中帧属性",
@@ -498,6 +514,8 @@ export const translations: Record<Language, TranslationSchema> = {
       paste: "粘贴 (Ctrl+V)",
       duplicateHere: "复制选中帧到此处",
       insertHere: "插入图片到此处",
+      addBlankFrame: "添加空白时间",
+      replaceFrameImage: "替换帧图片",
       reverseSelected: "选中帧反向排序",
       resetProperties: "重置选中帧属性",
       alignCenter: "居中对齐",

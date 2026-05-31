@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ImagePlus, Upload } from 'lucide-react';
+import { ImagePlus, Maximize2, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
@@ -17,7 +17,7 @@ import { generateAPNG } from './utils/apngHelper';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
 import { cloneFrameWithNewIds, createFrameFromImage, createImageLayer, createLayerTrack, flattenTrackLayers, getFrameLayers, syncFrameFromActiveLayer, updateFrameActiveLayer } from './utils/layerHelpers';
 import { renderFrameToCanvas, renderFrameTracksToCanvas } from './utils/layerRenderer';
-import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from './utils/frameTrackTiming';
+import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime, getTrackFrameSegments } from './utils/frameTrackTiming';
 import { translations, Language } from './utils/translations';
 import {
   saveSnapshotToDB,
@@ -38,6 +38,7 @@ import { SidebarExportSettingsPanel } from './components/SidebarExportSettingsPa
 import { SidebarFooterLinks } from './components/SidebarFooterLinks';
 import { SidebarImageProcessingPanel } from './components/SidebarImageProcessingPanel';
 import { SidebarUploadArea } from './components/SidebarUploadArea';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { TransparentConfirmDialog } from './components/TransparentConfirmDialog';
 import { VideoImportModal } from './components/VideoImportModal';
 import { parseGifFrames } from './utils/gifParser';
@@ -142,6 +143,14 @@ interface AppState {
   canvasConfig: CanvasConfig;
 }
 
+interface PendingCanvasResizeConfirm {
+  imageWidth: number;
+  imageHeight: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  resolve: (resizeCanvas: boolean) => void;
+}
+
 const createDefaultFrameTrack = (frames: FrameData[] = []): FrameTrack => ({
   id: 'track-main',
   name: 'Track 1',
@@ -216,6 +225,121 @@ const fitFramesToCanvas = (sourceFrames: FrameData[], canvasWidth: number, canva
       y: Math.round((safeCanvasHeight - scaledHeight) / 2),
     });
   });
+};
+
+const isFirstTrackInitialImport = (state: AppState) => {
+  const frameTracks = state.frameTracks ?? [];
+  if (frameTracks.length === 0) {
+    return (state.frames ?? []).length === 0;
+  }
+
+  const firstTrack = frameTracks[0];
+  const activeTrackId = state.activeFrameTrackId ?? firstTrack.id;
+  const hasAnyTrackFrames = frameTracks.some(track => track.frames.length > 0);
+
+  return activeTrackId === firstTrack.id && !hasAnyTrackFrames;
+};
+
+const createBlankTimelineFrame = (
+  duration: number,
+  startTime: number,
+  canvasWidth: number,
+  canvasHeight: number
+): FrameData => ({
+  id: Math.random().toString(36).substr(2, 9),
+  file: new File([], `blank-gap-${Date.now()}.txt`, { type: 'application/x-empty' }),
+  previewUrl: '',
+  duration: Math.max(1, Math.round(duration)),
+  startTime: Math.max(0, Math.round(startTime)),
+  x: 0,
+  y: 0,
+  width: Math.max(1, canvasWidth),
+  height: Math.max(1, canvasHeight),
+  originalWidth: Math.max(1, canvasWidth),
+  originalHeight: Math.max(1, canvasHeight),
+  isBlank: true,
+  layers: [],
+});
+
+const normalizeTimelineFrames = (sourceFrames: FrameData[], canvasWidth: number, canvasHeight: number) => {
+  const normalized: FrameData[] = [];
+  let cursor = 0;
+
+  const appendImplicitBlank = (duration: number) => {
+    const safeDuration = Math.max(0, Math.round(duration));
+    if (safeDuration <= 0) return;
+
+    const lastFrame = normalized[normalized.length - 1];
+    if (lastFrame?.isBlank) {
+      normalized[normalized.length - 1] = {
+        ...lastFrame,
+        duration: Math.max(1, lastFrame.duration + safeDuration),
+      };
+    } else {
+      normalized.push(createBlankTimelineFrame(safeDuration, cursor, canvasWidth, canvasHeight));
+    }
+    cursor += safeDuration;
+  };
+
+  sourceFrames.forEach(frame => {
+    const requestedStart = typeof frame.startTime === 'number' && Number.isFinite(frame.startTime)
+      ? Math.max(0, Math.round(frame.startTime))
+      : cursor;
+    const gap = requestedStart - cursor;
+    if (gap > 0) {
+      appendImplicitBlank(gap);
+    }
+
+    const duration = Math.max(1, Math.round(frame.duration || 1));
+    const normalizedFrame: FrameData = frame.isBlank
+      ? {
+        ...frame,
+        duration,
+        startTime: cursor,
+        isBlank: true,
+        layers: [],
+        width: Math.max(1, frame.width || canvasWidth),
+        height: Math.max(1, frame.height || canvasHeight),
+        originalWidth: Math.max(1, frame.originalWidth || canvasWidth),
+        originalHeight: Math.max(1, frame.originalHeight || canvasHeight),
+      }
+      : {
+        ...frame,
+        duration,
+        startTime: cursor,
+      };
+
+    normalized.push(normalizedFrame);
+    cursor += duration;
+  });
+
+  return normalized;
+};
+
+const removeFramesAndCollapseBlankTime = (sourceFrames: FrameData[], idsToRemove: Set<string>) => {
+  const segments = getTrackFrameSegments(sourceFrames);
+  let collapsedDuration = 0;
+
+  return sourceFrames.reduce<FrameData[]>((nextFrames, frame, index) => {
+    const segment = segments[index];
+    if (idsToRemove.has(frame.id)) {
+      if (frame.isBlank) {
+        collapsedDuration += segment?.duration ?? frame.duration ?? 0;
+      }
+      return nextFrames;
+    }
+
+    if (collapsedDuration > 0 && typeof segment?.start === 'number') {
+      nextFrames.push({
+        ...frame,
+        startTime: Math.max(0, segment.start - collapsedDuration),
+      });
+      return nextFrames;
+    }
+
+    nextFrames.push(frame);
+    return nextFrames;
+  }, []);
 };
 
 const App: React.FC = () => {
@@ -322,6 +446,8 @@ const App: React.FC = () => {
   const [dialogClosing, setDialogClosing] = useState(false);
   const [pendingTransparentSwitch, setPendingTransparentSwitch] = useState(false);
   const [hasSeenTransparentPrompt, setHasSeenTransparentPrompt] = useState(false);
+  const [canvasResizeConfirm, setCanvasResizeConfirm] = useState<PendingCanvasResizeConfirm | null>(null);
+  const [canvasResizeDialogClosing, setCanvasResizeDialogClosing] = useState(false);
 
   // Selection State
   const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(new Set());
@@ -394,6 +520,7 @@ const App: React.FC = () => {
   const [previewFrameIndex, setPreviewFrameIndex] = useState<number | null>(null);
   const [previewTimeMs, setPreviewTimeMs] = useState<number | null>(null);
   const [syncPreviewSelection, setSyncPreviewSelection] = useState(true);
+  const [autoJumpToSelectedFrame, setAutoJumpToSelectedFrame] = useState(true);
   const [exportInFrameIndex, setExportInFrameIndex] = useState<number | null>(null);
   const [exportOutFrameIndex, setExportOutFrameIndex] = useState<number | null>(null);
 
@@ -597,6 +724,8 @@ const App: React.FC = () => {
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const insertFileInputRef = useRef<HTMLInputElement>(null);
+  const replaceFrameInputRef = useRef<HTMLInputElement>(null);
+  const pendingReplaceFrameIdRef = useRef<string | null>(null);
   const virtualListRef = useRef<VirtualFrameListHandle>(null);
   const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -640,21 +769,38 @@ const App: React.FC = () => {
     });
   };
 
-  const confirmCanvasResizeForImport = useCallback((imageWidth: number, imageHeight: number) => {
-    if (imageWidth <= 0 || imageHeight <= 0) return false;
+  const confirmCanvasResizeForImport = useCallback((imageWidth: number, imageHeight: number): Promise<boolean> => {
+    if (imageWidth <= 0 || imageHeight <= 0) return Promise.resolve(false);
 
     const currentWidth = canvasConfig.width;
     const currentHeight = canvasConfig.height;
     if (imageWidth === currentWidth && imageHeight === currentHeight) {
-      return true;
+      return Promise.resolve(true);
     }
 
-    const message = language === 'zh'
-      ? `导入素材尺寸为 ${imageWidth} x ${imageHeight}，当前画布为 ${currentWidth} x ${currentHeight}。\n\n是否将画布尺寸改为导入素材尺寸？\n\n选择“取消”将保持当前画布尺寸，并把导入帧等比居中适配。`
-      : `The imported media is ${imageWidth} x ${imageHeight}, while the current canvas is ${currentWidth} x ${currentHeight}.\n\nResize the canvas to match the imported media?\n\nChoose Cancel to keep the current canvas size and fit the imported frames inside it.`;
+    return new Promise(resolve => {
+      setCanvasResizeConfirm({
+        imageWidth,
+        imageHeight,
+        canvasWidth: currentWidth,
+        canvasHeight: currentHeight,
+        resolve,
+      });
+      setCanvasResizeDialogClosing(false);
+    });
+  }, [canvasConfig.height, canvasConfig.width]);
 
-    return window.confirm(message);
-  }, [canvasConfig.height, canvasConfig.width, language]);
+  const handleCanvasResizeConfirm = useCallback((resizeCanvas: boolean) => {
+    const pending = canvasResizeConfirm;
+    if (!pending) return;
+
+    setCanvasResizeDialogClosing(true);
+    window.setTimeout(() => {
+      pending.resolve(resizeCanvas);
+      setCanvasResizeConfirm(null);
+      setCanvasResizeDialogClosing(false);
+    }, 160);
+  }, [canvasResizeConfirm]);
 
   // Show notification with auto-dismiss
   // Show notification with auto-dismiss
@@ -745,8 +891,8 @@ const App: React.FC = () => {
   // Helper to get last selected ID for range selection
   const lastSelectedIdRef = useRef<string | null>(null);
 
-  const handleSelection = (id: string, e: React.MouseEvent) => {
-    const { ctrlKey, metaKey, shiftKey } = e;
+  const updateFrameSelection = useCallback((id: string, modifiers: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean } = {}) => {
+    const { ctrlKey = false, metaKey = false, shiftKey = false } = modifiers;
     const isMultiSelect = ctrlKey || metaKey || isBatchSelectMode;
     const isRangeSelect = shiftKey;
 
@@ -783,6 +929,28 @@ const App: React.FC = () => {
       }
       return next;
     });
+  }, [frames, isBatchSelectMode]);
+
+  const handleSelection = (id: string, e: React.MouseEvent) => {
+    const isToggleOff = (e.ctrlKey || e.metaKey || isBatchSelectMode) && !e.shiftKey && selectedFrameIds.has(id);
+    const currentSelectedId = lastSelectedIdRef.current ?? Array.from(selectedFrameIds).pop();
+    const currentSelectedIndex = currentSelectedId ? frames.findIndex(frame => frame.id === currentSelectedId) : -1;
+    const heldPreviewTime = previewTimeMs ?? (
+      currentSelectedIndex >= 0 ? getFrameStartTime(frames, currentSelectedIndex) : 0
+    );
+    updateFrameSelection(id, e);
+    if (!autoJumpToSelectedFrame || isToggleOff) {
+      if (previewTimeMs === null) {
+        setPreviewTimeMs(heldPreviewTime);
+      }
+      return;
+    }
+
+    const frameIndex = frames.findIndex(frame => frame.id === id);
+    if (frameIndex === -1) return;
+
+    setPreviewFrameIndex(frameIndex);
+    setPreviewTimeMs(getFrameStartTime(frames, frameIndex));
   };
 
   const addDecodedAnimationFrames = async (
@@ -974,13 +1142,14 @@ const App: React.FC = () => {
       }
 
       const shouldResizeCanvasOnFirstImport = frames.length === 0
-        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        ? await confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
         : false;
 
       if (importConfig.mode === 'insert' && importConfig.insertIndex !== null) {
         const insertIndex = importConfig.insertIndex;
         setAppState(prev => {
           const shouldSetSize = prev.frames.length === 0;
+          const shouldAutoSetCanvasTransparency = isFirstTrackInitialImport(prev);
           const framesToInsert = shouldSetSize && !shouldResizeCanvasOnFirstImport
             ? fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height)
             : newFrames;
@@ -994,29 +1163,34 @@ const App: React.FC = () => {
               ...prev.canvasConfig,
               width: firstImageWidth,
               height: firstImageHeight,
-              transparent: null,
+              transparent: shouldAutoSetCanvasTransparency ? null : prev.canvasConfig.transparent,
             } : prev.canvasConfig,
           };
         }, 'addFrames');
       } else {
         setAppState(prev => {
           const isFirstImport = prev.frames.length === 0;
+          const shouldAutoSetCanvasTransparency = isFirstTrackInitialImport(prev);
 
           if (isFirstImport) {
-            showNotification(t.autoDisableTransparent);
+            if (shouldAutoSetCanvasTransparency) {
+              showNotification(t.autoDisableTransparent);
+            }
             const framesToAdd = shouldResizeCanvasOnFirstImport
               ? newFrames
               : fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
 
+            const nextCanvasConfig = {
+              ...prev.canvasConfig,
+              width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
+              height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
+              transparent: shouldAutoSetCanvasTransparency ? null : prev.canvasConfig.transparent,
+            };
+
             return {
               ...prev,
               frames: [...prev.frames, ...framesToAdd],
-              canvasConfig: {
-                ...prev.canvasConfig,
-                width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
-                height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
-                transparent: null,
-              },
+              canvasConfig: nextCanvasConfig,
             };
           }
 
@@ -1185,7 +1359,7 @@ const App: React.FC = () => {
 
     const index = frames.findIndex(f => f.id === id);
     // Default to inserting AFTER the clicked item
-    setContextMenu({ x: e.clientX, y: e.clientY, insertIndex: index + 1 });
+    setContextMenu({ x: e.clientX, y: e.clientY, insertIndex: index + 1, frameId: id });
   };
 
   const handleBackgroundContextMenu = (e: React.MouseEvent) => {
@@ -1415,6 +1589,100 @@ const App: React.FC = () => {
     setContextMenu(null);
   };
 
+  const handleContextReplaceFrameImage = () => {
+    if (!contextMenu?.frameId) return;
+
+    pendingReplaceFrameIdRef.current = contextMenu.frameId;
+    replaceFrameInputRef.current?.click();
+    setContextMenu(null);
+  };
+
+  const handleReplaceFrameImageFile = (file: File | undefined) => {
+    const frameId = pendingReplaceFrameIdRef.current;
+    pendingReplaceFrameIdRef.current = null;
+    if (!frameId || !file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const naturalWidth = image.naturalWidth || image.width || canvasConfig.width || 1;
+      const naturalHeight = image.naturalHeight || image.height || canvasConfig.height || 1;
+
+      setAppState(prev => ({
+        ...prev,
+        frames: prev.frames.map(frame => {
+          if (frame.id !== frameId) return frame;
+
+          const updates: Partial<FrameData> = {
+            file,
+            previewUrl,
+            isBlank: false,
+            originalWidth: naturalWidth,
+            originalHeight: naturalHeight,
+          };
+
+          if (frame.isBlank) {
+            updates.x = 0;
+            updates.y = 0;
+            updates.width = naturalWidth;
+            updates.height = naturalHeight;
+            updates.layers = undefined;
+            updates.activeLayerId = undefined;
+          }
+
+          return updateFrameActiveLayer(frame, updates);
+        }),
+      }), 'updateFrame');
+    };
+    image.onerror = () => URL.revokeObjectURL(previewUrl);
+    image.src = previewUrl;
+  };
+
+  const handleAddBlankFrame = () => {
+    if (!contextMenu) return;
+    const { insertIndex } = contextMenu;
+    const canvasWidth = Math.max(1, canvasConfig.width);
+    const canvasHeight = Math.max(1, canvasConfig.height);
+    const segments = getTrackFrameSegments(frames);
+    const previousEnd = insertIndex > 0
+      ? segments[Math.min(insertIndex - 1, segments.length - 1)]?.end ?? 0
+      : 0;
+    const nextStart = insertIndex < segments.length
+      ? segments[insertIndex]?.start
+      : undefined;
+    const availableGap = typeof nextStart === 'number'
+      ? Math.max(0, nextStart - previousEnd)
+      : 0;
+    const duration = availableGap > 0
+      ? Math.max(1, Math.min(globalDuration, availableGap))
+      : globalDuration;
+    const shiftAmount = Math.max(0, duration - availableGap);
+    const blankFrame = createBlankTimelineFrame(duration, previousEnd, canvasWidth, canvasHeight);
+
+    setAppState(prev => {
+      const boundedInsertIndex = Math.max(0, Math.min(insertIndex, prev.frames.length));
+      const currentSegments = getTrackFrameSegments(prev.frames);
+      const nextFrames = prev.frames.map((frame, index) => {
+        if (index < boundedInsertIndex || shiftAmount <= 0) return frame;
+        const segment = currentSegments[index];
+        return {
+          ...frame,
+          startTime: (segment?.start ?? 0) + shiftAmount,
+        };
+      });
+
+      nextFrames.splice(boundedInsertIndex, 0, blankFrame);
+      return {
+        ...prev,
+        frames: normalizeTimelineFrames(nextFrames, canvasWidth, canvasHeight),
+      };
+    }, 'addFrames');
+
+    setSelectedFrameIds(new Set([blankFrame.id]));
+    lastSelectedIdRef.current = blankFrame.id;
+    setContextMenu(null);
+  };
+
   const handleReverseSelectedFrames = () => {
     if (selectedFrameIds.size < 2) {
       setContextMenu(null);
@@ -1451,7 +1719,11 @@ const App: React.FC = () => {
 
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.filter(f => !selectedFrameIds.has(f.id))
+      frames: normalizeTimelineFrames(
+        removeFramesAndCollapseBlankTime(prev.frames, selectedFrameIds),
+        prev.canvasConfig.width,
+        prev.canvasConfig.height
+      )
     }));
 
     setSelectedFrameIds(new Set());
@@ -1660,7 +1932,7 @@ const App: React.FC = () => {
 
     if (newFrames.length > 0) {
       const shouldResizeCanvasOnFirstImport = frames.length === 0
-        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        ? await confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
         : false;
 
       setAppState(prev => {
@@ -1728,15 +2000,30 @@ const App: React.FC = () => {
 
   // Keyboard Shortcuts Handler
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Input protection: don't trigger if user is typing in an input
-      const target = e.target;
-      const isEditableTarget = target instanceof HTMLInputElement
+    const isEditableKeyboardTarget = (target: EventTarget | null) => {
+      return target instanceof HTMLInputElement
         || target instanceof HTMLTextAreaElement
         || target instanceof HTMLSelectElement
         || (target instanceof HTMLElement && target.isContentEditable);
+    };
 
-      if (isEditableTarget) {
+    const hasBlockingDialog = () => showInsertModal
+      || Boolean(pendingVideoImport)
+      || isImportingVideo
+      || Boolean(generatedGif)
+      || isGenerating
+      || showSnapshots
+      || showHistoryStack
+      || showTransparentConfirm
+      || Boolean(canvasResizeConfirm)
+      || clearHistoryConfirm
+      || clearFramesConfirm
+      || Boolean(restoreConfirmId)
+      || githubLinkConfirm;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Input protection: don't trigger if user is typing in an input
+      if (isEditableKeyboardTarget(e.target)) {
         return;
       }
 
@@ -1774,31 +2061,23 @@ const App: React.FC = () => {
         }
       } else {
         // Non-modifier shortcuts
-        const hasBlockingDialog = showInsertModal
-          || Boolean(pendingVideoImport)
-          || isImportingVideo
-          || Boolean(generatedGif)
-          || isGenerating
-          || showSnapshots
-          || showHistoryStack
-          || showTransparentConfirm
-          || clearHistoryConfirm
-          || clearFramesConfirm
-          || Boolean(restoreConfirmId)
-          || githubLinkConfirm;
+        const isBlocked = hasBlockingDialog();
 
         if (e.code === 'Space') {
-          if (!hasBlockingDialog && frames.length > 0) {
+          if (!isBlocked) {
             e.preventDefault();
-            setIsPlaying(prev => !prev);
+            e.stopPropagation();
+            if (!e.repeat && frames.length > 0) {
+              setIsPlaying(prev => !prev);
+            }
           }
         } else if (e.key.toLowerCase() === 'm') {
-          if (!hasBlockingDialog && selectedFrameIds.size > 0) {
+          if (!isBlocked && selectedFrameIds.size > 0) {
             e.preventDefault();
             handleSetColorTag(QUICK_MARK_COLOR);
           }
         } else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'o') {
-          if (!hasBlockingDialog && frames.length > 0) {
+          if (!isBlocked && frames.length > 0) {
             e.preventDefault();
             if (e.key.toLowerCase() === 'i') {
               setExportInPointFromCurrentFrame();
@@ -1835,8 +2114,21 @@ const App: React.FC = () => {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || isEditableKeyboardTarget(e.target) || hasBlockingDialog()) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [
     canUndo,
     canRedo,
@@ -1859,6 +2151,7 @@ const App: React.FC = () => {
     showSnapshots,
     showHistoryStack,
     showTransparentConfirm,
+    canvasResizeConfirm,
     clearHistoryConfirm,
     clearFramesConfirm,
     restoreConfirmId,
@@ -2048,32 +2341,37 @@ const App: React.FC = () => {
 
     if (newFrames.length > 0) {
       const shouldResizeCanvasOnFirstImport = frames.length === 0
-        ? confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
+        ? await confirmCanvasResizeForImport(firstImageWidth, firstImageHeight)
         : false;
 
       setAppState(prev => {
         const isFirstImport = prev.frames.length === 0;
-        const shouldAskForTransparent = !isFirstImport && hasTransparency && !prev.canvasConfig.transparent && !hasSeenTransparentPrompt;
+        const shouldAutoSetCanvasTransparency = isFirstTrackInitialImport(prev);
+        const shouldAskForTransparent = !shouldAutoSetCanvasTransparency && hasTransparency && !prev.canvasConfig.transparent && !hasSeenTransparentPrompt;
 
         // First import: auto set background based on transparency
         if (isFirstImport) {
           const shouldAutoDisableTransparent = !hasTransparency;
-          if (shouldAutoDisableTransparent) {
+          if (shouldAutoSetCanvasTransparency && shouldAutoDisableTransparent) {
             showNotification(t.autoDisableTransparent);
           }
           const framesToAdd = shouldResizeCanvasOnFirstImport
             ? newFrames
             : fitFramesToCanvas(newFrames, prev.canvasConfig.width, prev.canvasConfig.height);
 
+          const nextCanvasConfig = {
+            ...prev.canvasConfig,
+            width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
+            height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
+            transparent: shouldAutoSetCanvasTransparency
+              ? (hasTransparency ? 'rgba(0,0,0,0)' : null)
+              : prev.canvasConfig.transparent,
+          };
+
           return {
             ...prev,
             frames: [...prev.frames, ...framesToAdd],
-            canvasConfig: {
-              ...prev.canvasConfig,
-              width: shouldResizeCanvasOnFirstImport ? firstImageWidth : prev.canvasConfig.width,
-              height: shouldResizeCanvasOnFirstImport ? firstImageHeight : prev.canvasConfig.height,
-              transparent: hasTransparency ? 'rgba(0,0,0,0)' : null
-            }
+            canvasConfig: nextCanvasConfig
           };
         }
 
@@ -2231,7 +2529,11 @@ const App: React.FC = () => {
   const removeFrame = (id: string) => {
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.filter(f => f.id !== id)
+      frames: normalizeTimelineFrames(
+        removeFramesAndCollapseBlankTime(prev.frames, new Set([id])),
+        prev.canvasConfig.width,
+        prev.canvasConfig.height
+      )
     }), 'removeFrame');
     if (selectedFrameIds.has(id)) {
       setSelectedFrameIds(prev => {
@@ -2244,14 +2546,22 @@ const App: React.FC = () => {
 
   // Absolute update (from Sidebar or Inputs)
   const handleBatchUpdate = (updates: Partial<FrameData>) => {
+    const shouldNormalizeTimeline = updates.startTime !== undefined || updates.duration !== undefined;
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.map(f => {
-        if (selectedFrameIds.has(f.id)) {
-          return updateFrameActiveLayer(f, updates);
-        }
-        return f;
-      })
+      frames: shouldNormalizeTimeline
+        ? normalizeTimelineFrames(prev.frames.map(f => {
+          if (selectedFrameIds.has(f.id)) {
+            return updateFrameActiveLayer(f, updates);
+          }
+          return f;
+        }), prev.canvasConfig.width, prev.canvasConfig.height)
+        : prev.frames.map(f => {
+          if (selectedFrameIds.has(f.id)) {
+            return updateFrameActiveLayer(f, updates);
+          }
+          return f;
+        })
     }), 'batchUpdate');
   };
 
@@ -2274,9 +2584,16 @@ const App: React.FC = () => {
 
   // Single update (FrameItem input)
   const updateFrame = (id: string, updates: Partial<FrameData>) => {
+    const shouldNormalizeTimeline = updates.startTime !== undefined || updates.duration !== undefined;
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f)
+      frames: shouldNormalizeTimeline
+        ? normalizeTimelineFrames(
+          prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f),
+          prev.canvasConfig.width,
+          prev.canvasConfig.height
+        )
+        : prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f)
     }), 'updateFrame');
   };
 
@@ -2486,13 +2803,47 @@ const App: React.FC = () => {
   };
 
   const handleUpdateFrameTrack = (trackId: string, updates: Partial<FrameTrack>) => {
-    setAppState(prev => ({
-      ...prev,
-      frameTracks: prev.frameTracks.map(track => (
-        track.id === trackId ? { ...track, ...updates } : track
-      )),
-      frames: trackId === prev.activeFrameTrackId && updates.frames ? updates.frames : prev.frames,
-    }), 'updateFrameTrack');
+    setAppState(prev => {
+      let activeFrames = prev.frames;
+      const nextFrameTracks = prev.frameTracks.map(track => {
+        if (track.id !== trackId) return track;
+
+        const nextFrames = updates.frames
+          ? normalizeTimelineFrames(updates.frames, prev.canvasConfig.width, prev.canvasConfig.height)
+          : track.frames;
+
+        if (trackId === prev.activeFrameTrackId && updates.frames) {
+          activeFrames = nextFrames;
+        }
+
+        return {
+          ...track,
+          ...updates,
+          frames: nextFrames,
+        };
+      });
+
+      return {
+        ...prev,
+        frameTracks: nextFrameTracks,
+        frames: activeFrames,
+      };
+    }, 'updateFrameTrack');
+  };
+
+  const handleMoveFrameTrack = (trackId: string, direction: 'up' | 'down') => {
+    setAppState(prev => {
+      const currentIndex = prev.frameTracks.findIndex(track => track.id === trackId);
+      if (currentIndex === -1) return prev;
+
+      const targetIndex = direction === 'up' ? currentIndex + 1 : currentIndex - 1;
+      if (targetIndex < 0 || targetIndex >= prev.frameTracks.length) return prev;
+
+      return {
+        ...prev,
+        frameTracks: arrayMove(prev.frameTracks, currentIndex, targetIndex),
+      };
+    }, 'moveFrameTrack');
   };
 
   const handleAddFrameTrack = () => {
@@ -2524,6 +2875,7 @@ const App: React.FC = () => {
     const nextActiveTrack = activeFrameTrackId === trackId
       ? remainingTracks[0]
       : remainingTracks.find(track => track.id === activeFrameTrackId) ?? remainingTracks[0];
+    const shouldSwitchToSingleTrackRenderer = remainingTracks.length === 1;
 
     setAppState(prev => ({
       ...prev,
@@ -2531,6 +2883,27 @@ const App: React.FC = () => {
       activeFrameTrackId: nextActiveTrack?.id ?? null,
       frames: nextActiveTrack?.frames ?? [],
     }), 'deleteFrameTrack');
+
+    if (shouldSwitchToSingleTrackRenderer && nextActiveTrack) {
+      const nextFrames = nextActiveTrack.frames;
+      if (nextFrames.length > 0) {
+        const currentTime = previewTimeMs ?? 0;
+        const activeSegment = findFrameAtTime(nextFrames, currentTime);
+        const nextFrameIndex = activeSegment?.index ?? 0;
+        const nextFrame = nextFrames[nextFrameIndex];
+
+        setSelectedFrameIds(new Set([nextFrame.id]));
+        lastSelectedIdRef.current = nextFrame.id;
+        setPreviewFrameIndex(nextFrameIndex);
+        setPreviewTimeMs(getFrameStartTime(nextFrames, nextFrameIndex));
+      } else {
+        setSelectedFrameIds(new Set());
+        lastSelectedIdRef.current = null;
+        setPreviewFrameIndex(null);
+        setPreviewTimeMs(null);
+      }
+      return;
+    }
 
     setSelectedFrameIds(new Set());
     lastSelectedIdRef.current = null;
@@ -3394,6 +3767,17 @@ const App: React.FC = () => {
   const activeFrameTrackName = activeFrameTrack?.name || `${language === 'zh' ? '轨道' : 'Track'} ${activeFrameTrackIndex + 1 || 1}`;
   const activeFrameTrackLabel = language === 'zh' ? '当前查看轨道' : 'Viewing track';
   const activeFrameTrackCountLabel = language === 'zh' ? `${frames.length} 帧` : `${frames.length} frames`;
+  const frameListTailFillTargetTimeMs = React.useMemo(() => {
+    if (exportOutFrameIndex !== null) {
+      if (frameTracks.length > 1) {
+        return createCompositionTimeline(frameTracks, frames)[exportOutFrameIndex]?.end ?? null;
+      }
+
+      return getTrackFrameSegments(frames)[exportOutFrameIndex]?.end ?? null;
+    }
+
+    return getCompositionDuration(frameTracks, frames);
+  }, [exportOutFrameIndex, frameTracks, frames]);
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-200 overflow-hidden" onDragEnter={handleDrag}>
@@ -3620,6 +4004,7 @@ const App: React.FC = () => {
             previewFrameIndex={previewFrameIndex}
             previewTimeMs={previewTimeMs}
             syncPreviewSelection={syncPreviewSelection}
+            autoJumpToSelectedFrame={autoJumpToSelectedFrame}
             exportInFrameIndex={exportInFrameIndex}
             exportOutFrameIndex={exportOutFrameIndex}
             config={canvasConfig}
@@ -3632,6 +4017,8 @@ const App: React.FC = () => {
               canvasEditor: t.canvasEditor,
               unlinkSelection: t.unlinkSelection,
               linkSelection: t.linkSelection,
+              enableAutoJumpToSelection: language === 'zh' ? '选中帧时自动定位时间线' : 'Auto-jump timeline to selected frame',
+              disableAutoJumpToSelection: language === 'zh' ? '关闭选中帧自动定位时间线' : 'Disable auto-jump to selected frame',
               hideEditor: t.hideEditor,
               selectFrameToEdit: t.selectFrameToEdit,
               frameInfo: t.frameInfo,
@@ -3651,14 +4038,19 @@ const App: React.FC = () => {
               locked: language === 'zh' ? '锁定' : 'Locked',
               unlocked: language === 'zh' ? '未锁定' : 'Unlocked',
               deleteLayer: language === 'zh' ? '删除图层' : 'Delete layer',
+              moveTrackUp: language === 'zh' ? '上移' : 'Move up',
+              moveTrackDown: language === 'zh' ? '下移' : 'Move down',
             }}
             onSyncPreviewSelectionChange={setSyncPreviewSelection}
+            onAutoJumpToSelectedFrameChange={setAutoJumpToSelectedFrame}
             onPlayingChange={setIsPlaying}
             onHideEditor={() => setShowCanvasEditor(false)}
             onCanvasUpdate={handleCanvasUpdate}
             onSelectLayer={handleSelectLayer}
             onSelectFrameTrack={handleSelectFrameTrack}
+            onSelectFrameBlock={updateFrameSelection}
             onUpdateFrameTrack={handleUpdateFrameTrack}
+            onMoveFrameTrack={handleMoveFrameTrack}
             onAddFrameTrack={handleAddFrameTrack}
             onDeleteFrameTrack={handleDeleteFrameTrack}
             onColorPick={(color) => {
@@ -3799,6 +4191,7 @@ const App: React.FC = () => {
                         onCompactModeChange={setCompactMode}
                         transparentColor={gifTransparentColor}
                         isTransparentEnabled={isGifTransparentEnabled}
+                        tailFillTargetTimeMs={frameListTailFillTargetTimeMs}
                       />
                     </div>
                   </SortableContext>
@@ -3857,6 +4250,17 @@ const App: React.FC = () => {
         </main>
       </div>
 
+      <input
+        ref={replaceFrameInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          handleReplaceFrameImageFile(event.target.files?.[0]);
+          event.target.value = '';
+        }}
+      />
+
       <FrameContextMenu
         menu={contextMenu}
         labels={t.contextMenu}
@@ -3871,6 +4275,9 @@ const App: React.FC = () => {
         addTimelineLayersLabel={language === 'zh' ? '选中帧新建轨道' : 'New track from selection'}
         onAddTimelineLayers={handleAddSelectedAsTimelineTrack}
         onInsert={handleContextInsert}
+        onAddBlankFrame={handleAddBlankFrame}
+        canReplaceFrame={Boolean(contextMenu?.frameId)}
+        onReplaceFrameImage={handleContextReplaceFrameImage}
         onReverseSelected={handleReverseSelectedFrames}
         onAlignCenter={() => handleAlignCenter('selected')}
         onFitContain={() => handleFitSelected('contain')}
@@ -3969,6 +4376,35 @@ const App: React.FC = () => {
         onKeep={() => handleConfirmTransparentSwitch(false)}
         onSwitch={() => handleConfirmTransparentSwitch(true)}
       />
+
+      <ConfirmDialog
+        isOpen={Boolean(canvasResizeConfirm)}
+        isClosing={canvasResizeDialogClosing}
+        title={language === 'zh' ? '调整画布尺寸？' : 'Resize canvas?'}
+        message={language === 'zh'
+          ? '导入素材尺寸和当前画布不一致。你可以让画布匹配素材，也可以保持当前画布尺寸并自动等比居中适配导入帧。'
+          : 'The imported media size does not match the current canvas. You can resize the canvas to match it, or keep the current canvas and fit the imported frames inside it.'}
+        cancelLabel={language === 'zh' ? '保持当前尺寸' : 'Keep current size'}
+        confirmLabel={language === 'zh' ? '更改画布尺寸' : 'Resize canvas'}
+        icon={<Maximize2 size={20} />}
+        onCancel={() => handleCanvasResizeConfirm(false)}
+        onConfirm={() => handleCanvasResizeConfirm(true)}
+      >
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '导入素材' : 'Imported media'}</div>
+            <div className="font-mono font-semibold text-blue-300">
+              {canvasResizeConfirm?.imageWidth ?? 0} x {canvasResizeConfirm?.imageHeight ?? 0}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '当前画布' : 'Current canvas'}</div>
+            <div className="font-mono font-semibold text-gray-300">
+              {canvasResizeConfirm?.canvasWidth ?? canvasConfig.width} x {canvasResizeConfirm?.canvasHeight ?? canvasConfig.height}
+            </div>
+          </div>
+        </div>
+      </ConfirmDialog>
 
       <NotificationToast
         message={notificationMessage}

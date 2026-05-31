@@ -36,13 +36,26 @@ const TimelineItem = ({
       title={`Frame ${index + 1}`}
     >
       <div className="w-full h-full pointer-events-none">
-        <TransparentImage 
-          src={frame.previewUrl} 
-          alt={`Frame ${index}`}
-          className="w-full h-full object-contain"
-          transparentColor={transparentColor}
-          enabled={isTransparentEnabled}
-        />
+        {frame.isBlank ? (
+          <div
+            className="flex h-full w-full items-center justify-center bg-amber-500/15"
+            style={{
+              backgroundImage: 'repeating-linear-gradient(45deg, rgba(245,158,11,0.18) 0 4px, rgba(245,158,11,0.05) 4px 8px)',
+            }}
+          >
+            <span className="max-w-full truncate px-1 text-[8px] font-semibold uppercase tracking-wide text-amber-100">
+              Blank
+            </span>
+          </div>
+        ) : (
+          <TransparentImage
+            src={frame.previewUrl}
+            alt={`Frame ${index}`}
+            className="w-full h-full object-contain"
+            transparentColor={transparentColor}
+            enabled={isTransparentEnabled}
+          />
+        )}
       </div>
       
       {frame.colorTag && (

@@ -90,6 +90,10 @@ export const createFrameFromImage = (input: {
 };
 
 export const getFrameLayers = (frame: FrameData): LayerData[] => {
+  if (frame.isBlank) {
+    return [];
+  }
+
   if (frame.layers && frame.layers.length > 0) {
     return frame.layers;
   }
@@ -136,14 +140,52 @@ export const syncFrameFromActiveLayer = (frame: FrameData): FrameData => {
 };
 
 export const updateFrameActiveLayer = (frame: FrameData, updates: Partial<FrameData>): FrameData => {
-  const layers = getFrameLayers(frame);
-  const activeLayerId = frame.activeLayerId ?? layers[0]?.id;
   const transformKeys: Array<keyof FrameData> = ['x', 'y', 'width', 'height', 'rotation'];
   const hasLayerUpdate = transformKeys.some(key => updates[key] !== undefined);
   const hasSourceUpdate = updates.file !== undefined
     || updates.previewUrl !== undefined
     || updates.originalWidth !== undefined
     || updates.originalHeight !== undefined;
+
+  if (frame.isBlank && hasSourceUpdate && updates.file && updates.previewUrl) {
+    const id = frame.id;
+    const originalWidth = updates.originalWidth ?? frame.originalWidth;
+    const originalHeight = updates.originalHeight ?? frame.originalHeight;
+    const width = updates.width ?? originalWidth;
+    const height = updates.height ?? originalHeight;
+    const layer = createImageLayer({
+      id: `${id}:layer:0`,
+      name: updates.file.name,
+      file: updates.file,
+      previewUrl: updates.previewUrl,
+      x: updates.x ?? 0,
+      y: updates.y ?? 0,
+      width,
+      height,
+      rotation: updates.rotation,
+      originalWidth,
+      originalHeight,
+    });
+
+    return {
+      ...frame,
+      ...updates,
+      isBlank: false,
+      file: updates.file,
+      previewUrl: updates.previewUrl,
+      x: updates.x ?? 0,
+      y: updates.y ?? 0,
+      width,
+      height,
+      originalWidth,
+      originalHeight,
+      layers: [layer],
+      activeLayerId: layer.id,
+    };
+  }
+
+  const layers = getFrameLayers(frame);
+  const activeLayerId = frame.activeLayerId ?? layers[0]?.id;
 
   if ((!hasLayerUpdate && !hasSourceUpdate) || !activeLayerId) {
     return { ...frame, ...updates, layers, activeLayerId };

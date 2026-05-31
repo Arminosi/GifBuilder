@@ -203,15 +203,28 @@ export const GlobalFrameTimeline: React.FC<GlobalFrameTimelineProps> = ({
           const width = `${(timeline.durations[index] / timeline.totalDuration) * 100}%`;
           const isSelected = index === selectedIndex;
           const isHovered = index === hoverIndex;
+          const isBlank = Boolean(frame.isBlank);
 
           return (
             <div
               key={frame.id}
-              className={`relative h-full border-r border-gray-950/40 last:border-r-0 ${isSelected ? 'bg-blue-500' : isHovered ? 'bg-gray-500' : 'bg-gray-700'
-                }`}
-              style={{ width }}
-              title={`Frame ${index + 1} - ${frame.duration}ms`}
+              className={`relative h-full overflow-hidden border-r border-gray-950/40 last:border-r-0 ${isSelected ? 'bg-blue-500' : isHovered ? 'bg-gray-500' : isBlank ? 'bg-amber-500/20' : 'bg-gray-700'
+                } ${isBlank ? 'ring-1 ring-inset ring-amber-400/25' : ''}`}
+              style={{
+                width,
+                backgroundImage: isBlank && !isSelected && !isHovered
+                  ? 'repeating-linear-gradient(45deg, rgba(245,158,11,0.18) 0 4px, rgba(245,158,11,0.05) 4px 8px)'
+                  : undefined,
+              }}
+              title={`${isBlank ? 'Blank frame' : 'Frame'} ${index + 1} - ${frame.duration}ms`}
             >
+              {isBlank && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="max-w-full truncate px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-100/90">
+                    Blank
+                  </span>
+                </div>
+              )}
               {frame.colorTag && (
                 <div
                   className="absolute inset-x-0 bottom-0 h-1.5"

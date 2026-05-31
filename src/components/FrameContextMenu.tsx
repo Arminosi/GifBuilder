@@ -6,6 +6,8 @@ import {
   Copy,
   Download,
   FilePlus,
+  ImagePlus,
+  Square,
   Layers,
   Maximize,
   ArrowDownUp,
@@ -30,6 +32,9 @@ interface FrameContextMenuProps {
   addTimelineLayersLabel: string;
   onAddTimelineLayers: () => void;
   onInsert: () => void;
+  onAddBlankFrame: () => void;
+  canReplaceFrame: boolean;
+  onReplaceFrameImage: () => void;
   onReverseSelected: () => void;
   onAlignCenter: () => void;
   onFitContain: () => void;
@@ -57,6 +62,9 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
   addTimelineLayersLabel,
   onAddTimelineLayers,
   onInsert,
+  onAddBlankFrame,
+  canReplaceFrame,
+  onReplaceFrameImage,
   onReverseSelected,
   onAlignCenter,
   onFitContain,
@@ -118,6 +126,22 @@ export const FrameContextMenu: React.FC<FrameContextMenuProps> = ({
         <FilePlus size={14} />
         {labels.insertHere}
       </button>
+      <button
+        className={menuButtonClass}
+        onClick={onAddBlankFrame}
+      >
+        <Square size={14} />
+        {labels.addBlankFrame}
+      </button>
+      {canReplaceFrame && (
+        <button
+          className={menuButtonClass}
+          onClick={onReplaceFrameImage}
+        >
+          <ImagePlus size={14} />
+          {labels.replaceFrameImage}
+        </button>
+      )}
       <button
         className={menuButtonClass}
         onClick={onReverseSelected}

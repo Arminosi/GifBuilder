@@ -12,6 +12,7 @@ export interface FrameData {
   height: number;
   rotation?: number; // in degrees
   colorTag?: string; // hex color code
+  isBlank?: boolean; // no-content timeline spacer frame
   originalWidth: number;
   originalHeight: number;
   layers?: LayerData[];
@@ -127,6 +128,7 @@ export interface FrameContextMenuState {
   x: number;
   y: number;
   insertIndex: number;
+  frameId?: string;
 }
 
 // Minimal type definition for gif.js since we might not have the @types package installed

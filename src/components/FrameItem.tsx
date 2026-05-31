@@ -4,9 +4,15 @@ import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FrameData } from '../types';
-import { X, GripVertical, MoreVertical, RotateCcw } from 'lucide-react';
+import { X, GripVertical, ImagePlus, MoreVertical, RotateCcw } from 'lucide-react';
 import { FrameLabels } from '../utils/translations';
 import { TransparentImage } from './TransparentImage';
+
+export interface FrameDurationExtendAction {
+  label: string;
+  title: string;
+  targetDuration: number;
+}
 
 interface FrameCardProps {
   frame: FrameData;
@@ -30,6 +36,7 @@ interface FrameCardProps {
   timelineStartTime?: number;
   transparentColor?: string | null;
   isTransparentEnabled?: boolean;
+  extendDurationAction?: FrameDurationExtendAction;
 }
 
 // Helper component for buffered input
@@ -140,12 +147,14 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
     setNodeRef,
     frameWidth,
     isHorizontal,
-    timelineStartTime
+    timelineStartTime,
+    extendDurationAction
   } = props;
   const [resetConfirm, setResetConfirm] = useState(false);
   const [isCompactMenuOpen, setIsCompactMenuOpen] = useState(false);
   const [compactMenuPosition, setCompactMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const compactMenuRef = useRef<HTMLDivElement>(null);
+  const replaceBlankInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isCompactMenuOpen) return;
@@ -176,6 +185,52 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
     if (!isCompactMenuOpen) setCompactMenuPosition(null);
   }, [isCompactMenuOpen]);
 
+  const handleReplaceBlankFile = (file: File | undefined) => {
+    if (!file || !onUpdate) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const width = image.naturalWidth || image.width || frame.width || 1;
+      const height = image.naturalHeight || image.height || frame.height || 1;
+      onUpdate(frame.id, {
+        file,
+        previewUrl,
+        isBlank: false,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        originalWidth: width,
+        originalHeight: height,
+        layers: undefined,
+        activeLayerId: undefined,
+      });
+    };
+    image.onerror = () => URL.revokeObjectURL(previewUrl);
+    image.src = previewUrl;
+  };
+
+  const blankFramePreview = (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gray-950/70 p-3 text-center">
+      <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+        {labels.blankFrame}
+      </span>
+      <button
+        type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          replaceBlankInputRef.current?.click();
+        }}
+        className="flex items-center gap-1 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-medium text-gray-300 transition-colors hover:border-blue-500 hover:text-white"
+      >
+        <ImagePlus size={13} />
+        {labels.replaceImage}
+      </button>
+    </div>
+  );
+
   const propertyInputs = (
     <div className="grid grid-cols-2 gap-1.5 text-xs">
       <div className="col-span-2">
@@ -186,6 +241,22 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
           onChange={(val) => onUpdate?.(frame.id, { duration: val })}
         />
       </div>
+      {extendDurationAction && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onUpdate?.(frame.id, { duration: extendDurationAction.targetDuration });
+          }}
+          className="col-span-2 flex items-center justify-between gap-2 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-left text-[11px] font-medium text-amber-200 transition-colors hover:border-amber-400/50 hover:bg-amber-500/15"
+          title={extendDurationAction.title}
+        >
+          <span className="truncate">{extendDurationAction.label}</span>
+          <span className="shrink-0 font-mono text-[10px] text-amber-300/70">
+            {extendDurationAction.targetDuration}ms
+          </span>
+        </button>
+      )}
       <div className="col-span-2">
         <BufferedInput
           label="Start (ms)"
@@ -254,6 +325,18 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
   if (compact) {
     return (
       <>
+        {frame.isBlank && (
+          <input
+            ref={replaceBlankInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              handleReplaceBlankFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        )}
         <div
           ref={setNodeRef}
           style={style}
@@ -270,14 +353,16 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
             isSelected ? 'ring-2 ring-blue-500/80' : 'hover:ring-1 hover:ring-gray-600'
           } ${isDragging ? 'opacity-50' : 'opacity-100'}`}
         >
-          <TransparentImage
-            src={frame.previewUrl}
-            alt={`Frame ${index}`}
-            draggable={false}
-            className="h-full w-full object-contain pointer-events-none"
-            transparentColor={props.transparentColor}
-            enabled={props.isTransparentEnabled}
-          />
+          {frame.isBlank ? blankFramePreview : (
+            <TransparentImage
+              src={frame.previewUrl}
+              alt={`Frame ${index}`}
+              draggable={false}
+              className="h-full w-full object-contain pointer-events-none"
+              transparentColor={props.transparentColor}
+              enabled={props.isTransparentEnabled}
+            />
+          )}
           <div className="absolute bottom-0 left-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
             #{index + 1}
           </div>
@@ -338,6 +423,18 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
           : 'bg-gray-800 border-gray-700 hover:border-gray-600'
       } ${compact ? 'p-2' : 'p-3 gap-2'} ${isDragging ? 'opacity-50' : 'opacity-100'}`}
     >
+      {frame.isBlank && (
+        <input
+          ref={replaceBlankInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => {
+            handleReplaceBlankFile(event.target.files?.[0]);
+            event.target.value = '';
+          }}
+        />
+      )}
       <div className="flex justify-between items-start mb-1 shrink-0">
         <div 
           {...dragAttributes} 
@@ -394,14 +491,16 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
 
       <div className={`flex ${isHorizontal ? 'flex-row gap-3 h-full min-h-0' : 'flex-col'}`}>
         <div className={`relative bg-gray-900 rounded border border-gray-700 overflow-hidden flex items-center justify-center ${isHorizontal ? 'flex-1 h-full' : (compact ? 'aspect-square mb-1' : 'aspect-square')}`}>
-          <TransparentImage 
-            src={frame.previewUrl} 
-            alt={`Frame ${index}`} 
-            draggable={false}
-            className="max-w-full max-h-full object-contain pointer-events-none" 
-            transparentColor={props.transparentColor}
-            enabled={props.isTransparentEnabled}
-          />
+          {frame.isBlank ? blankFramePreview : (
+            <TransparentImage
+              src={frame.previewUrl}
+              alt={`Frame ${index}`}
+              draggable={false}
+              className="max-w-full max-h-full object-contain pointer-events-none"
+              transparentColor={props.transparentColor}
+              enabled={props.isTransparentEnabled}
+            />
+          )}
           <div className="absolute bottom-0 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-tr">
             #{index + 1}
           </div>
@@ -460,7 +559,7 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
             </div>
             
             <div className="text-[10px] text-gray-500 truncate mt-2 px-1 shrink-0" title={frame.file.name}>
-              {frame.file.name}
+              {frame.isBlank ? labels.blankFrame : frame.file.name}
             </div>
           </div>
         )}
@@ -488,6 +587,7 @@ interface FrameItemProps {
   timelineStartTime?: number;
   transparentColor?: string | null;
   isTransparentEnabled?: boolean;
+  extendDurationAction?: FrameDurationExtendAction;
 }
 
 const FrameItemComponent: React.FC<FrameItemProps> = (props) => {
@@ -532,6 +632,9 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
       prev.frameWidth !== next.frameWidth ||
       prev.isHorizontal !== next.isHorizontal ||
       prev.timelineStartTime !== next.timelineStartTime ||
+      prev.extendDurationAction?.label !== next.extendDurationAction?.label ||
+      prev.extendDurationAction?.title !== next.extendDurationAction?.title ||
+      prev.extendDurationAction?.targetDuration !== next.extendDurationAction?.targetDuration ||
       prev.onRemove !== next.onRemove ||
       prev.onUpdate !== next.onUpdate ||
       prev.onReset !== next.onReset ||
@@ -567,6 +670,7 @@ export const FrameItem = memo(FrameItemComponent, (prev, next) => {
     f1.id === f2.id &&
     f1.previewUrl === f2.previewUrl &&
     f1.colorTag === f2.colorTag &&
+    f1.isBlank === f2.isBlank &&
     f1.duration === f2.duration &&
     f1.startTime === f2.startTime &&
     f1.file === f2.file
