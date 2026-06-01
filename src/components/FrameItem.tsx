@@ -45,17 +45,26 @@ const BufferedInput = ({
   onChange, 
   min, 
   label,
-  tooltip
+  tooltip,
+  dragStep = 1
 }: { 
   value: number; 
   onChange?: (val: number) => void; 
   min?: number;
   label: string;
   tooltip?: string;
+  dragStep?: number;
 }) => {
   const [localValue, setLocalValue] = useState(value.toString());
   const [isEditing, setIsEditing] = useState(false);
+  const [isDraggingValue, setIsDraggingValue] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startValue: number;
+    didDrag: boolean;
+  } | null>(null);
 
   useEffect(() => {
     setLocalValue(value.toString());
@@ -88,12 +97,65 @@ const BufferedInput = ({
     }
   };
 
+  const handleValuePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onChange || event.button !== 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startValue: value,
+      didDrag: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleValuePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId || !onChange) return;
+
+    const deltaX = event.clientX - dragState.startX;
+    if (!dragState.didDrag && Math.abs(deltaX) < 3) return;
+
+    dragState.didDrag = true;
+    setIsDraggingValue(true);
+    const steps = Math.round(deltaX / 4);
+    const effectiveDragStep = event.shiftKey ? 1 : dragStep;
+    const nextValue = Math.max(min ?? -Infinity, dragState.startValue + steps * effectiveDragStep);
+
+    if (nextValue !== value) {
+      setLocalValue(nextValue.toString());
+      onChange(nextValue);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleValuePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!dragState.didDrag && onChange) {
+      setIsEditing(true);
+    }
+
+    dragStateRef.current = null;
+    setIsDraggingValue(false);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   return (
     <div 
       onClick={(e) => e.stopPropagation()} 
-      className="relative flex items-center justify-between gap-2 bg-gray-900 border border-gray-800 rounded px-2 h-6 w-full hover:border-gray-600 transition-colors group/input"
+      className={`relative flex items-center justify-between gap-2 bg-gray-900 border rounded px-2 h-6 w-full transition-colors group/input ${isDraggingValue ? 'border-blue-500 cursor-ew-resize' : 'border-gray-800 hover:border-gray-600'}`}
     >
-      {isEditing && (
+      {(isEditing || isDraggingValue) && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-gray-900 text-blue-400 text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 whitespace-nowrap z-20 shadow-lg animate-in fade-in zoom-in-95 duration-100 pointer-events-none">
           {tooltip || label}
         </div>
@@ -112,12 +174,16 @@ const BufferedInput = ({
         />
       ) : (
         <div 
-          onClick={() => onChange && setIsEditing(true)}
+          onPointerDown={handleValuePointerDown}
+          onPointerMove={handleValuePointerMove}
+          onPointerUp={handleValuePointerEnd}
+          onPointerCancel={handleValuePointerEnd}
           className={`text-xs font-mono truncate text-right flex-1 ${
             onChange 
-              ? 'text-gray-300 cursor-text' 
+              ? 'text-gray-300 cursor-ew-resize select-none' 
               : 'text-gray-500 cursor-default'
           }`}
+          title={onChange ? `${tooltip || label}: click to edit, drag to adjust; hold Shift for 1-step changes` : tooltip || label}
         >
           {value}
         </div>
@@ -238,6 +304,7 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
           label={labels.time}
           value={frame.duration}
           min={10}
+          dragStep={10}
           onChange={(val) => onUpdate?.(frame.id, { duration: val })}
         />
       </div>
@@ -263,6 +330,7 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
           tooltip="Start time (ms)"
           value={timelineStartTime ?? frame.startTime ?? 0}
           min={0}
+          dragStep={10}
           onChange={(val) => onUpdate?.(frame.id, { startTime: Math.max(0, val) })}
         />
       </div>
@@ -363,11 +431,25 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
               enabled={props.isTransparentEnabled}
             />
           )}
-          <div className="absolute bottom-0 left-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
-            #{index + 1}
+          <div className="absolute bottom-1 left-1 flex max-w-[calc(100%-2.25rem)] items-center gap-1 overflow-hidden">
+            <span className="shrink-0 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
+              #{index + 1}
+            </span>
+            <span
+              className="min-w-0 truncate rounded border border-gray-700/70 bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-gray-200"
+              title={`${frame.duration}ms`}
+            >
+              {frame.duration}ms
+            </span>
           </div>
+          {frame.colorTag && (
+            <div
+              className="absolute left-1.5 top-1.5 h-3 w-3 rounded-full border border-black/50 shadow-sm"
+              style={{ backgroundColor: frame.colorTag }}
+            />
+          )}
           <div
-            className="pointer-events-none absolute left-1 top-1 rounded bg-black/60 p-0.5 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
+            className="pointer-events-none absolute right-1 top-1 rounded bg-black/60 p-0.5 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
             onClick={(e) => e.stopPropagation()}
           >
             <GripVertical size={14} />
@@ -514,6 +596,7 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
                    label={labels.time} 
                    value={frame.duration} 
                    min={10}
+                   dragStep={10}
                    onChange={(val) => onUpdate?.(frame.id, { duration: val })} 
                  />
               </div>
@@ -523,6 +606,7 @@ export const FrameCard: React.FC<FrameCardProps> = (props) => {
                    tooltip="开始出现时间 (ms)"
                    value={timelineStartTime ?? frame.startTime ?? 0}
                    min={0}
+                   dragStep={10}
                    onChange={(val) => onUpdate?.(frame.id, { startTime: Math.max(0, val) })}
                  />
               </div>

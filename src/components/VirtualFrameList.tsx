@@ -35,6 +35,7 @@ interface VirtualFrameListProps {
 
 const GAP = 16; // gap-4 (1rem)
 const PADDING = 24; // p-6 (1.5rem)
+const TOP_PADDING = 12;
 
 const Row = memo(({ index, style, data }: ListChildComponentProps) => {
   const {
@@ -63,11 +64,15 @@ const Row = memo(({ index, style, data }: ListChildComponentProps) => {
 
   const startIndex = index * columnCount;
   const rowFrames = frames.slice(startIndex, startIndex + columnCount);
+  const rowTop = typeof style.top === 'number'
+    ? style.top + TOP_PADDING
+    : `calc(${style.top ?? '0px'} + ${TOP_PADDING}px)`;
 
   return (
     <div
       style={{
         ...style,
+        top: rowTop,
         paddingLeft: PADDING,
         paddingRight: PADDING,
         boxSizing: 'border-box',
@@ -223,7 +228,7 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
               itemCount={rowCount}
               itemSize={itemHeight}
               width={width}
-              className="custom-scrollbar"
+              className="custom-scrollbar box-border"
               itemData={{
                 frames,
                 columnCount: safeColumnCount,

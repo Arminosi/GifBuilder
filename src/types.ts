@@ -77,6 +77,8 @@ export interface FrameTrack {
   frames: FrameData[];
 }
 
+export type TimelineSpacingMode = 'blank' | 'previous';
+
 export interface CanvasConfig {
   width: number;
   height: number;

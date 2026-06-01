@@ -1,6 +1,6 @@
 import React from 'react';
 import { Crosshair, Layout, Minimize2, Play, ScanEye } from 'lucide-react';
-import type { CanvasConfig, FrameData, FrameTrack, LayerData } from '../types';
+import type { CanvasConfig, FrameData, FrameTrack, LayerData, TimelineSpacingMode } from '../types';
 import type { FrameLabels, TranslationSchema } from '../utils/translations';
 import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from '../utils/frameTrackTiming';
 import { getFrameLayers } from '../utils/layerHelpers';
@@ -30,6 +30,7 @@ interface CanvasWorkspaceProps {
   previewTimeMs: number | null;
   syncPreviewSelection: boolean;
   autoJumpToSelectedFrame: boolean;
+  dragSpacingMode: TimelineSpacingMode;
   exportInFrameIndex: number | null;
   exportOutFrameIndex: number | null;
   config: CanvasConfig;
@@ -68,20 +69,22 @@ interface CanvasWorkspaceProps {
   };
   onSyncPreviewSelectionChange: (enabled: boolean) => void;
   onAutoJumpToSelectedFrameChange: (enabled: boolean) => void;
+  onDragSpacingModeChange: (mode: TimelineSpacingMode) => void;
   onPlayingChange: (playing: boolean) => void;
   onHideEditor: () => void;
   onCanvasUpdate: (updates: Partial<FrameData>, commit?: boolean) => void;
   onSelectLayer?: (layerId: string) => void;
   onSelectFrameTrack: (trackId: string) => void;
   onSelectFrameBlock: (frameId: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) => void;
-  onUpdateFrameTrack: (trackId: string, updates: Partial<FrameTrack>) => void;
+  onBeginFrameTrackEdit: () => void;
+  onUpdateFrameTrack: (trackId: string, updates: Partial<FrameTrack>, options?: { historyMode?: 'push' | 'replace' }) => void;
   onMoveFrameTrack: (trackId: string, direction: 'up' | 'down') => void;
   onAddFrameTrack: () => void;
   onDeleteFrameTrack: (trackId: string) => void;
   onColorPick: (color: string) => void;
   onSelectFrame: (id: string, event: React.MouseEvent) => void;
   onSelectFrameByIndex: (index: number) => void;
-  onSelectTimelineTime: (timeMs: number) => void;
+  onSelectTimelineTime: (timeMs: number, options?: { syncSelection?: boolean }) => void;
   onSetExportInPoint: () => void;
   onSetExportOutPoint: () => void;
   onClearExportRange: () => void;
@@ -153,6 +156,14 @@ const createCachedSource = async (canvas: HTMLCanvasElement): Promise<CanvasImag
   return canvas;
 };
 
+const cacheContainsSource = (cache: Map<number, CanvasImageSource>, source: CanvasImageSource) => {
+  for (const cachedSource of cache.values()) {
+    if (cachedSource === source) return true;
+  }
+
+  return false;
+};
+
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   isVisible,
   isLargeScreen,
@@ -168,6 +179,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   previewTimeMs,
   syncPreviewSelection,
   autoJumpToSelectedFrame,
+  dragSpacingMode,
   exportInFrameIndex,
   exportOutFrameIndex,
   config,
@@ -179,12 +191,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   labels,
   onSyncPreviewSelectionChange,
   onAutoJumpToSelectedFrameChange,
+  onDragSpacingModeChange,
   onPlayingChange,
   onHideEditor,
   onCanvasUpdate,
   onSelectLayer,
   onSelectFrameTrack,
   onSelectFrameBlock,
+  onBeginFrameTrackEdit,
   onUpdateFrameTrack,
   onMoveFrameTrack,
   onAddFrameTrack,
@@ -270,12 +284,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     })),
   }), [config, frameTracks]);
   React.useEffect(() => {
-    compositionBitmapCacheRef.current.forEach(scheduleCloseCachedSource);
+    const preservedSource = currentCompositionBitmapRef.current ?? lastCompositionBitmapRef.current;
+    compositionBitmapCacheRef.current.forEach(source => {
+      if (source !== preservedSource) {
+        scheduleCloseCachedSource(source);
+      }
+    });
     compositionBitmapCacheRef.current.clear();
     compositionRenderQueueRef.current.clear();
     compositionImageCacheRef.current.clear();
-    lastCompositionBitmapRef.current = null;
-    currentCompositionBitmapRef.current = null;
+    lastCompositionBitmapRef.current = preservedSource;
+    currentCompositionBitmapRef.current = preservedSource;
     setCompositionCacheVersion(version => version + 1);
   }, [compositionCacheKey]);
 
@@ -372,7 +391,15 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     : null;
   React.useEffect(() => {
     if (cachedCompositionBitmap) {
+      const previousBitmap = lastCompositionBitmapRef.current;
       lastCompositionBitmapRef.current = cachedCompositionBitmap;
+      if (
+        previousBitmap
+        && previousBitmap !== cachedCompositionBitmap
+        && !cacheContainsSource(compositionBitmapCacheRef.current, previousBitmap)
+      ) {
+        scheduleCloseCachedSource(previousBitmap);
+      }
     }
   }, [cachedCompositionBitmap]);
   const stableCompositionBitmap = cachedCompositionBitmap
@@ -381,9 +408,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     currentCompositionBitmapRef.current = stableCompositionBitmap;
   }, [stableCompositionBitmap]);
   const displayedCanvasFrame = canvasFrame;
-  const shouldShowBlankCanvas = frameTracks.length > 0 && !displayedCanvasFrame && !stableCompositionBitmap;
+  const hasEditableSelectedFrame = Boolean(selectedFrame && selectedFrameIds.has(selectedFrame.id) && !isPlaying);
+  const canvasPreviewBitmap = hasEditableSelectedFrame ? null : stableCompositionBitmap;
+  const shouldShowBlankCanvas = frameTracks.length > 0 && !displayedCanvasFrame && !canvasPreviewBitmap;
   const isCompositionOnlyPreview = Boolean(
-    stableCompositionBitmap || (canvasFrame && (!activeTrackFrameAtCurrentTime || !selectedFrameIds.has(activeTrackFrameAtCurrentTime.id)))
+    !hasEditableSelectedFrame
+    && (canvasPreviewBitmap || (canvasFrame && (!activeTrackFrameAtCurrentTime || !selectedFrameIds.has(activeTrackFrameAtCurrentTime.id))))
   );
 
   if (!isVisible) return null;
@@ -453,7 +483,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       <CanvasEditor
         frame={displayedCanvasFrame}
         frameIndex={currentTimelineFrameIndex >= 0 ? currentTimelineFrameIndex : undefined}
-        previewBitmap={stableCompositionBitmap}
+        previewBitmap={canvasPreviewBitmap}
         config={config}
         onUpdate={onCanvasUpdate}
         onSelectLayer={onSelectLayer}
@@ -471,6 +501,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           frames={frames}
           selectedFrameIds={selectedFrameIds}
           onSelect={onSelectFrame}
+          onSelectIndex={onSelectFrameByIndex}
           transparentColor={gifTransparentColor}
           isTransparentEnabled={isGifTransparentEnabled}
         />
@@ -483,6 +514,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             selectedFrameIds={selectedFrameIds}
             currentFrameIndex={currentTimelineFrameIndex}
             currentTimeMs={currentTimelineTimeMs}
+            dragSpacingMode={dragSpacingMode}
             labels={{
               title: labels.frameTracks,
               empty: labels.noFrameTracks,
@@ -511,6 +543,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onSelectFrame={onSelectFrameByIndex}
             onSelectFrameBlock={onSelectFrameBlock}
             onSelectTime={onSelectTimelineTime}
+            onDragSpacingModeChange={onDragSpacingModeChange}
+            onBeginTrackEdit={onBeginFrameTrackEdit}
             onUpdateTrack={onUpdateFrameTrack}
             onMoveTrack={onMoveFrameTrack}
             onAddTrack={onAddFrameTrack}
