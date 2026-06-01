@@ -78,59 +78,59 @@ const DITHER_OPTIONS: Array<{
 }> = [
   {
     value: 'none',
-    label: { en: 'Off', zh: '??' },
-    description: { en: 'No dithering. Keeps flat colors clean and predictable.', zh: '?????????????????' },
-    pros: { en: 'Least frame noise, smallest flicker risk.', zh: '??????????????' },
-    cons: { en: 'Gradients may show stronger color bands.', zh: '???????????????' }
+    label: { en: 'Off', zh: '关闭' },
+    description: { en: 'No dithering. Keeps flat colors clean and predictable.', zh: '不使用抖动，纯色更干净且结果更稳定。' },
+    pros: { en: 'Least frame noise, smallest flicker risk.', zh: '帧噪点最少，闪烁风险最低。' },
+    cons: { en: 'Gradients may show stronger color bands.', zh: '渐变区域可能出现更明显的色带。' }
   },
   {
     value: 'FloydSteinberg',
     label: { en: 'Floyd Steinberg', zh: 'Floyd Steinberg' },
-    description: { en: 'Classic error diffusion with strong gradient detail.', zh: '??????????????????' },
-    pros: { en: 'Good for photos and smooth gradients.', zh: '??????????' },
-    cons: { en: 'Can create animated grain between frames.', zh: '???????????' }
+    description: { en: 'Classic error diffusion with strong gradient detail.', zh: '经典误差扩散，能保留较强的渐变细节。' },
+    pros: { en: 'Good for photos and smooth gradients.', zh: '适合照片和柔和渐变。' },
+    cons: { en: 'Can create animated grain between frames.', zh: '动画帧之间可能出现颗粒跳动。' }
   },
   {
     value: 'FloydSteinberg-serpentine',
-    label: { en: 'Floyd Steinberg Serpentine', zh: 'Floyd Steinberg ??' },
-    description: { en: 'Alternates scan direction to reduce directional texture.', zh: '????????????????' },
-    pros: { en: 'More balanced texture than standard Floyd.', zh: '???????????' },
-    cons: { en: 'Still may shimmer on motion.', zh: '??????????' }
+    label: { en: 'Floyd Steinberg Serpentine', zh: 'Floyd Steinberg 蛇形' },
+    description: { en: 'Alternates scan direction to reduce directional texture.', zh: '交替扫描方向，减少单向纹理感。' },
+    pros: { en: 'More balanced texture than standard Floyd.', zh: '纹理比标准 Floyd 更均衡。' },
+    cons: { en: 'Still may shimmer on motion.', zh: '运动时仍可能轻微闪烁。' }
   },
   {
     value: 'FalseFloydSteinberg',
-    label: { en: 'False Floyd Steinberg', zh: '?? Floyd Steinberg' },
-    description: { en: 'A lighter diffusion pattern with less processing.', zh: '???????????' },
-    pros: { en: 'Faster, softer than full Floyd.', zh: '???????????' },
-    cons: { en: 'Less accurate on complex gradients.', zh: '?????????' }
+    label: { en: 'False Floyd Steinberg', zh: '简化 Floyd Steinberg' },
+    description: { en: 'A lighter diffusion pattern with less processing.', zh: '更轻量的扩散模式，处理成本更低。' },
+    pros: { en: 'Faster, softer than full Floyd.', zh: '更快，颗粒感比完整 Floyd 更柔和。' },
+    cons: { en: 'Less accurate on complex gradients.', zh: '复杂渐变的准确度较低。' }
   },
   {
     value: 'Stucki',
     label: { en: 'Stucki', zh: 'Stucki' },
-    description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '???????????????????' },
-    pros: { en: 'Smooth gradients, richer perceived detail.', zh: '?????????????' },
-    cons: { en: 'More visible texture and larger files.', zh: '?????????????' }
+    description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '将误差扩散到更大范围，色调过渡更平滑。' },
+    pros: { en: 'Smooth gradients, richer perceived detail.', zh: '渐变更顺，视觉细节更丰富。' },
+    cons: { en: 'More visible texture and larger files.', zh: '纹理更明显，文件可能更大。' }
   },
   {
     value: 'Stucki-serpentine',
-    label: { en: 'Stucki Serpentine', zh: 'Stucki ??' },
-    description: { en: 'Stucki with alternating scan direction.', zh: '??????? Stucki ???' },
-    pros: { en: 'Smoother large gradients with less directional bias.', zh: '??????????????' },
-    cons: { en: 'Can be noisy in animation.', zh: '????????????' }
+    label: { en: 'Stucki Serpentine', zh: 'Stucki 蛇形' },
+    description: { en: 'Stucki with alternating scan direction.', zh: '使用交替扫描方向的 Stucki 抖动。' },
+    pros: { en: 'Smoother large gradients with less directional bias.', zh: '大面积渐变更平滑，方向偏差更少。' },
+    cons: { en: 'Can be noisy in animation.', zh: '动画中可能产生较明显噪点。' }
   },
   {
     value: 'Atkinson',
     label: { en: 'Atkinson', zh: 'Atkinson' },
-    description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '?????????????????' },
-    pros: { en: 'Crisp edges, often less muddy.', zh: '???????????' },
-    cons: { en: 'May lose subtle shadow detail.', zh: '????????????' }
+    description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '更克制的扩散风格，画面清脆且带复古感。' },
+    pros: { en: 'Crisp edges, often less muddy.', zh: '边缘清晰，不容易显得浑浊。' },
+    cons: { en: 'May lose subtle shadow detail.', zh: '可能丢失细微阴影细节。' }
   },
   {
     value: 'Atkinson-serpentine',
-    label: { en: 'Atkinson Serpentine', zh: 'Atkinson ??' },
-    description: { en: 'Atkinson with alternating scan direction.', zh: '??????? Atkinson ???' },
-    pros: { en: 'Crisp result with more even texture.', zh: '???????????' },
-    cons: { en: 'Less faithful for soft photos.', zh: '???????????' }
+    label: { en: 'Atkinson Serpentine', zh: 'Atkinson 蛇形' },
+    description: { en: 'Atkinson with alternating scan direction.', zh: '使用交替扫描方向的 Atkinson 抖动。' },
+    pros: { en: 'Crisp result with more even texture.', zh: '结果清脆，纹理更均匀。' },
+    cons: { en: 'Less faithful for soft photos.', zh: '对柔和照片的还原度较低。' }
   }
 ];
 
@@ -1386,23 +1386,28 @@ const App: React.FC = () => {
     setPreviewTimeMs(getFrameStartTime(frames, index));
   }, [frames, frameTracks]);
 
-  const selectTimelineTime = useCallback((timeMs: number) => {
+  const selectTimelineTime = useCallback((timeMs: number, options: { syncSelection?: boolean } = {}) => {
     const totalDuration = getCompositionDuration(frameTracks, frames);
     const safeTime = Math.min(Math.max(0, totalDuration - 1), Math.max(0, Math.floor(timeMs)));
     const activeSegment = findFrameAtTime(frames, safeTime);
+    const shouldSyncSelection = options.syncSelection !== false;
 
     setPreviewTimeMs(safeTime);
 
     if (activeSegment) {
       setPreviewFrameIndex(activeSegment.index);
-      lastSelectedIdRef.current = activeSegment.frame.id;
-      setSelectedFrameIds(prev => (
-        prev.size === 1 && prev.has(activeSegment.frame.id) ? prev : new Set([activeSegment.frame.id])
-      ));
+      if (shouldSyncSelection) {
+        lastSelectedIdRef.current = activeSegment.frame.id;
+        setSelectedFrameIds(prev => (
+          prev.size === 1 && prev.has(activeSegment.frame.id) ? prev : new Set([activeSegment.frame.id])
+        ));
+      }
     } else {
       setPreviewFrameIndex(null);
-      lastSelectedIdRef.current = null;
-      setSelectedFrameIds(prev => prev.size === 0 ? prev : new Set());
+      if (shouldSyncSelection) {
+        lastSelectedIdRef.current = null;
+        setSelectedFrameIds(prev => prev.size === 0 ? prev : new Set());
+      }
     }
   }, [frames, frameTracks]);
 

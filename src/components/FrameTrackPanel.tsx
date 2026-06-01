@@ -4,6 +4,10 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Magnet, MoreVertical, Plus, Slid
 import type { FrameTrack, TimelineSpacingMode } from '../types';
 import { getCompositionDuration, getFrameDuration, getTrackFrameSegments } from '../utils/frameTrackTiming';
 
+interface TimelineTimeSelectOptions {
+  syncSelection?: boolean;
+}
+
 interface FrameTrackPanelProps {
   tracks: FrameTrack[];
   activeTrackId: string | null;
@@ -40,7 +44,7 @@ interface FrameTrackPanelProps {
   onSelectTrack: (trackId: string) => void;
   onSelectFrame: (index: number) => void;
   onSelectFrameBlock: (frameId: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) => void;
-  onSelectTime: (timeMs: number) => void;
+  onSelectTime: (timeMs: number, options?: TimelineTimeSelectOptions) => void;
   onDragSpacingModeChange: (mode: TimelineSpacingMode) => void;
   onBeginTrackEdit: () => void;
   onUpdateTrack: (trackId: string, updates: Partial<FrameTrack>, options?: { historyMode?: 'push' | 'replace' }) => void;
@@ -82,6 +86,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     rowWidth: number;
     originalStart: number;
     originalStarts: Map<string, number>;
+    snapTargets: number[];
     hasHistoryEntry: boolean;
     pendingDeleteFrameId: string | null;
     pendingDeleteStart: number | null;
@@ -180,6 +185,25 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     onSelectTime(targetTime);
   };
 
+  const getSnapTargets = (trackId: string, excludedFrameIds: string[]) => {
+    if (!isSnapEnabled) return [];
+
+    const excludedIds = new Set(excludedFrameIds);
+    const targets = new Set<number>();
+
+    tracks.forEach(candidateTrack => {
+      getTrackFrameSegments(candidateTrack.frames).forEach(segment => {
+        if (candidateTrack.id === trackId && excludedIds.has(segment.frame.id)) return;
+        targets.add(segment.start);
+        targets.add(segment.end);
+      });
+    });
+
+    if (targets.size === 0) return [];
+    targets.add(0);
+    return Array.from(targets).filter(target => Number.isFinite(target));
+  };
+
   const handleTrackPointerDown = (trackId: string, event: React.PointerEvent<HTMLButtonElement>) => {
     activePointerIdRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -207,7 +231,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     }
   };
 
-  const getConstrainedFrameStart = (track: FrameTrack, frameId: string, proposedStart: number) => {
+  const getConstrainedFrameStart = (track: FrameTrack, frameId: string, proposedStart: number, snapTargets: number[] = []) => {
     const frameIndex = track.frames.findIndex(frame => frame.id === frameId);
     if (frameIndex === -1) return Math.max(0, Math.round(proposedStart));
 
@@ -224,22 +248,8 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     const minStart = previousBoundary;
     let nextStartTime = Math.max(minStart, Math.round(proposedStart));
 
-    if (isSnapEnabled) {
-      const boundaryTargets = new Set<number>([0, previousBoundary, previousEnd]);
-      if (Number.isFinite(nextStart)) {
-        boundaryTargets.add(nextStart);
-      }
-
-      tracks.forEach(candidateTrack => {
-        getTrackFrameSegments(candidateTrack.frames).forEach(segment => {
-          if (candidateTrack.id === track.id && segment.frame.id === frameId) return;
-          boundaryTargets.add(segment.start);
-          boundaryTargets.add(segment.end);
-        });
-      });
-
-      const snapCandidates = Array.from(boundaryTargets)
-        .filter(target => Number.isFinite(target))
+    if (isSnapEnabled && snapTargets.length > 0) {
+      const snapCandidates = snapTargets
         .flatMap(target => [
           { start: target, distance: Math.abs(nextStartTime - target) },
           { start: target - duration, distance: Math.abs((nextStartTime + duration) - target) },
@@ -335,7 +345,8 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     track: FrameTrack,
     frameIds: string[],
     originalStarts: Map<string, number>,
-    proposedDelta: number
+    proposedDelta: number,
+    snapTargets: number[] = []
   ) => {
     const movingIds = new Set(frameIds);
     const segments = getTrackFrameSegments(track.frames);
@@ -364,18 +375,8 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       nextDelta = Math.min(maxDelta, nextDelta);
     }
 
-    if (isSnapEnabled) {
-      const boundaryTargets = new Set<number>([0]);
-      tracks.forEach(candidateTrack => {
-        getTrackFrameSegments(candidateTrack.frames).forEach(segment => {
-          if (candidateTrack.id === track.id && movingIds.has(segment.frame.id)) return;
-          boundaryTargets.add(segment.start);
-          boundaryTargets.add(segment.end);
-        });
-      });
-
-      const snapCandidates = Array.from(boundaryTargets)
-        .filter(target => Number.isFinite(target))
+    if (isSnapEnabled && snapTargets.length > 0) {
+      const snapCandidates = snapTargets
         .flatMap(target => movingSegments.flatMap(segment => {
           const originalStart = originalStarts.get(segment.frame.id) ?? segment.start;
           const originalEnd = originalStart + segment.duration;
@@ -433,7 +434,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     if (!(selectedFrameIds.has(frameId) && selectedFrameIds.size > 1 && !event.ctrlKey && !event.metaKey && !event.shiftKey)) {
       onSelectFrameBlock(frameId, modifiers);
     }
-    onSelectTime(start);
+    onSelectTime(start, { syncSelection: false });
 
     const trackFrameIds = new Set(track.frames.map(frame => frame.id));
     const frameIds = selectedFrameIds.has(frameId)
@@ -457,6 +458,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       rowWidth: row.getBoundingClientRect().width,
       originalStart: start,
       originalStarts,
+      snapTargets: getSnapTargets(track.id, frameIds),
       hasHistoryEntry: false,
       pendingDeleteFrameId: null,
       pendingDeleteStart: null,
@@ -482,7 +484,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     }
 
     if (frameIds.length > 1) {
-      const nextDelta = getConstrainedGroupDelta(targetTrack, frameIds, moving.originalStarts, deltaTime);
+      const nextDelta = getConstrainedGroupDelta(targetTrack, frameIds, moving.originalStarts, deltaTime, moving.snapTargets);
       const nextPrimaryStart = (moving.originalStarts.get(moving.frameId) ?? moving.originalStart) + nextDelta;
       const nextFrames = targetTrack.frames.map(frame => (
         moving.originalStarts.has(frame.id)
@@ -494,10 +496,10 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       onUpdateTrack(moving.trackId, {
         frames: nextFrames,
       }, { historyMode: 'replace' });
-      onSelectTime(nextPrimaryStart);
+      onSelectTime(nextPrimaryStart, { syncSelection: false });
     } else {
       const proposedStart = moving.originalStart + deltaTime;
-      const nextStart = getConstrainedFrameStart(targetTrack, moving.frameId, proposedStart);
+      const nextStart = getConstrainedFrameStart(targetTrack, moving.frameId, proposedStart, moving.snapTargets);
       const frameIndex = targetTrack.frames.findIndex(frame => frame.id === moving.frameId);
       const segments = getTrackFrameSegments(targetTrack.frames);
       const previousSegment = frameIndex > 0 ? segments[frameIndex - 1] : null;
@@ -514,7 +516,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       onUpdateTrack(moving.trackId, {
         frames: nextFrames,
       }, { historyMode: 'replace' });
-      onSelectTime(nextStart);
+      onSelectTime(nextStart, { syncSelection: false });
     }
     event.preventDefault();
     event.stopPropagation();
@@ -813,12 +815,15 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
                 >
                   <div className="relative h-full overflow-hidden bg-gray-800">
                     {getTrackFrameSegments(track.frames).map((segment, segmentIndex, segments) => {
-                      const left = `${(segment.start / totalDuration) * 100}%`;
-                      const width = `${(segment.duration / totalDuration) * 100}%`;
+                      const leftPercent = totalDuration > 0 ? (segment.start / totalDuration) * 100 : 0;
+                      const widthPercent = totalDuration > 0 ? (segment.duration / totalDuration) * 100 : 0;
+                      const left = `${leftPercent}%`;
+                      const width = `${widthPercent}%`;
                       const isLastSegment = segmentIndex === segments.length - 1;
                       const isCurrentSegment = currentTimeMs >= segment.start && currentTimeMs < segment.end;
                       const isSelected = selectedFrameIds.has(segment.frame.id);
                       const isBlank = Boolean(segment.frame.isBlank);
+                      const shouldShowDuration = widthPercent >= 7;
 
                       return (
                         <div
@@ -837,10 +842,10 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
                           onPointerUp={isPreviewMode ? undefined : stopFrameDragging}
                           onPointerCancel={isPreviewMode ? undefined : stopFrameDragging}
                         >
-                          {isBlank && (
+                          {(isBlank || shouldShowDuration) && (
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                              <span className="max-w-full truncate px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-100/90">
-                                Blank
+                              <span className={`max-w-full truncate px-1 text-[9px] font-semibold uppercase tracking-wide ${isBlank ? 'text-amber-100/90' : 'text-gray-100/90'}`}>
+                                {isBlank ? `Blank${shouldShowDuration ? ` · ${segment.duration}ms` : ''}` : `${segment.duration}ms`}
                               </span>
                             </div>
                           )}

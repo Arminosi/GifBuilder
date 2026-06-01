@@ -6,6 +6,7 @@ interface TimelineProps {
   frames: FrameData[];
   selectedFrameIds: Set<string>;
   onSelect: (id: string, e: React.MouseEvent) => void;
+  onSelectIndex?: (index: number) => void;
   onReorder?: (newFrames: FrameData[]) => void;
   transparentColor?: string;
   isTransparentEnabled?: boolean;
@@ -28,6 +29,7 @@ const TimelineItem = ({
 }) => {
   return (
     <div 
+      data-timeline-index={index}
       onClick={(e) => onSelect(frame.id, e)}
       className={`
         relative h-10 w-10 rounded cursor-pointer overflow-hidden border-2 transition-all shrink-0 bg-gray-800 select-none
@@ -76,10 +78,54 @@ export const Timeline: React.FC<TimelineProps> = ({
   frames, 
   selectedFrameIds, 
   onSelect,
+  onSelectIndex,
   transparentColor,
   isTransparentEnabled
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const lastScrubIndexRef = useRef<number | null>(null);
+
+  const selectFrameFromPoint = (clientX: number, clientY: number) => {
+    if (!onSelectIndex) return;
+
+    const target = document.elementFromPoint(clientX, clientY);
+    const item = target?.closest('[data-timeline-index]') as HTMLElement | null;
+    if (!item) return;
+
+    const index = Number(item.dataset.timelineIndex);
+    if (!Number.isInteger(index) || index < 0 || index >= frames.length) return;
+    if (lastScrubIndexRef.current === index) return;
+
+    lastScrubIndexRef.current = index;
+    onSelectIndex(index);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSelectIndex || event.button !== 0) return;
+
+    activePointerIdRef.current = event.pointerId;
+    lastScrubIndexRef.current = null;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    selectFrameFromPoint(event.clientX, event.clientY);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) return;
+
+    selectFrameFromPoint(event.clientX, event.clientY);
+    event.preventDefault();
+  };
+
+  const stopScrubbing = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== event.pointerId) return;
+
+    activePointerIdRef.current = null;
+    lastScrubIndexRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   // Auto scroll to last selected
   useEffect(() => {
@@ -103,6 +149,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   return (
     <div 
       ref={scrollContainerRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={stopScrubbing}
+      onPointerCancel={stopScrubbing}
       className="h-14 bg-gray-900/95 border-t border-gray-800 shrink-0 flex items-center px-2 overflow-x-auto custom-scrollbar z-30 backdrop-blur-sm"
     >
       <div className="flex gap-1.5">

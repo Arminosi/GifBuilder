@@ -84,7 +84,7 @@ interface CanvasWorkspaceProps {
   onColorPick: (color: string) => void;
   onSelectFrame: (id: string, event: React.MouseEvent) => void;
   onSelectFrameByIndex: (index: number) => void;
-  onSelectTimelineTime: (timeMs: number) => void;
+  onSelectTimelineTime: (timeMs: number, options?: { syncSelection?: boolean }) => void;
   onSetExportInPoint: () => void;
   onSetExportOutPoint: () => void;
   onClearExportRange: () => void;
@@ -477,6 +477,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           frames={frames}
           selectedFrameIds={selectedFrameIds}
           onSelect={onSelectFrame}
+          onSelectIndex={onSelectFrameByIndex}
           transparentColor={gifTransparentColor}
           isTransparentEnabled={isGifTransparentEnabled}
         />

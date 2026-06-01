@@ -121,7 +121,8 @@ const BufferedInput = ({
     dragState.didDrag = true;
     setIsDraggingValue(true);
     const steps = Math.round(deltaX / 4);
-    const nextValue = Math.max(min ?? -Infinity, dragState.startValue + steps * dragStep);
+    const effectiveDragStep = event.shiftKey ? 1 : dragStep;
+    const nextValue = Math.max(min ?? -Infinity, dragState.startValue + steps * effectiveDragStep);
 
     if (nextValue !== value) {
       setLocalValue(nextValue.toString());
@@ -182,7 +183,7 @@ const BufferedInput = ({
               ? 'text-gray-300 cursor-ew-resize select-none' 
               : 'text-gray-500 cursor-default'
           }`}
-          title={onChange ? `${tooltip || label}: click to edit, drag to adjust` : tooltip || label}
+          title={onChange ? `${tooltip || label}: click to edit, drag to adjust; hold Shift for 1-step changes` : tooltip || label}
         >
           {value}
         </div>
