@@ -2832,7 +2832,8 @@ const App: React.FC = () => {
       const activeId = Array.from(selectedFrameIds).pop();
       if (!activeId) return prev;
 
-      const activeFrame = prev.frames.find(f => f.id === activeId);
+      const activeFrame = prev.frames.find(f => f.id === activeId)
+        ?? prev.frameTracks.flatMap(track => track.frames).find(f => f.id === activeId);
       if (!activeFrame) return prev;
 
       // Calculate deltas based on the difference between the requested new attributes
@@ -2850,25 +2851,32 @@ const App: React.FC = () => {
       // Let's stick to absolute for rotation if provided.
       const newRotation = newAttrs.rotation;
 
+      const updateSelectedFrame = (frame: FrameData) => {
+        if (!selectedFrameIds.has(frame.id)) {
+          return frame;
+        }
+
+        const updatedFrame = updateFrameActiveLayer(frame, {
+          x: Math.round(frame.x + dx),
+          y: Math.round(frame.y + dy),
+          width: Math.max(1, Math.round(frame.width + dw)),
+          height: Math.max(1, Math.round(frame.height + dh)),
+        });
+
+        if (newRotation !== undefined) {
+          return updateFrameActiveLayer(updatedFrame, { rotation: newRotation });
+        }
+
+        return updatedFrame;
+      };
+
       return {
         ...prev,
-        frames: prev.frames.map(f => {
-          if (selectedFrameIds.has(f.id)) {
-            const updatedFrame = updateFrameActiveLayer(f, {
-              x: Math.round(f.x + dx),
-              y: Math.round(f.y + dy),
-              width: Math.max(1, Math.round(f.width + dw)),
-              height: Math.max(1, Math.round(f.height + dh)),
-            });
-
-            if (newRotation !== undefined) {
-              return updateFrameActiveLayer(updatedFrame, { rotation: newRotation });
-            }
-
-            return updatedFrame;
-          }
-          return f;
-        })
+        frames: prev.frames.map(updateSelectedFrame),
+        frameTracks: prev.frameTracks.map(track => ({
+          ...track,
+          frames: track.frames.map(updateSelectedFrame),
+        })),
       };
     };
 
@@ -3049,9 +3057,6 @@ const App: React.FC = () => {
       activeFrameTrackId: nextTrack.id,
       frames: [],
     }), 'addFrameTrack');
-
-    setSelectedFrameIds(new Set());
-    lastSelectedIdRef.current = null;
   };
 
   const handleDeleteFrameTrack = (trackId: string) => {
@@ -3882,8 +3887,18 @@ const App: React.FC = () => {
 
   // Find the primary selected frame for the editor (last selected usually)
   const lastSelectedId = Array.from(selectedFrameIds).pop();
-  const selectedFrame = frames.find(f => f.id === lastSelectedId) || null;
-  const selectedFrameIndex = frames.findIndex(f => f.id === lastSelectedId);
+  const selectedFrameTrack = lastSelectedId
+    ? frameTracks.find(track => track.frames.some(frame => frame.id === lastSelectedId))
+    : null;
+  const selectedFrame = (lastSelectedId
+    ? frames.find(f => f.id === lastSelectedId)
+      ?? selectedFrameTrack?.frames.find(frame => frame.id === lastSelectedId)
+    : null) || null;
+  const selectedFrameIndex = lastSelectedId
+    ? (frames.findIndex(f => f.id === lastSelectedId) >= 0
+      ? frames.findIndex(f => f.id === lastSelectedId)
+      : selectedFrameTrack?.frames.findIndex(frame => frame.id === lastSelectedId) ?? -1)
+    : -1;
   const activeDragFrame = activeDragId ? frames.find(f => f.id === activeDragId) : null;
 
   // --- Resizing Logic ---

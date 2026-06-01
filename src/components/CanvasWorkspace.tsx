@@ -408,9 +408,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     currentCompositionBitmapRef.current = stableCompositionBitmap;
   }, [stableCompositionBitmap]);
   const displayedCanvasFrame = canvasFrame;
-  const shouldShowBlankCanvas = frameTracks.length > 0 && !displayedCanvasFrame && !stableCompositionBitmap;
+  const hasEditableSelectedFrame = Boolean(selectedFrame && selectedFrameIds.has(selectedFrame.id) && !isPlaying);
+  const canvasPreviewBitmap = hasEditableSelectedFrame ? null : stableCompositionBitmap;
+  const shouldShowBlankCanvas = frameTracks.length > 0 && !displayedCanvasFrame && !canvasPreviewBitmap;
   const isCompositionOnlyPreview = Boolean(
-    stableCompositionBitmap || (canvasFrame && (!activeTrackFrameAtCurrentTime || !selectedFrameIds.has(activeTrackFrameAtCurrentTime.id)))
+    !hasEditableSelectedFrame
+    && (canvasPreviewBitmap || (canvasFrame && (!activeTrackFrameAtCurrentTime || !selectedFrameIds.has(activeTrackFrameAtCurrentTime.id))))
   );
 
   if (!isVisible) return null;
@@ -480,7 +483,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       <CanvasEditor
         frame={displayedCanvasFrame}
         frameIndex={currentTimelineFrameIndex >= 0 ? currentTimelineFrameIndex : undefined}
-        previewBitmap={stableCompositionBitmap}
+        previewBitmap={canvasPreviewBitmap}
         config={config}
         onUpdate={onCanvasUpdate}
         onSelectLayer={onSelectLayer}
