@@ -156,6 +156,14 @@ const createCachedSource = async (canvas: HTMLCanvasElement): Promise<CanvasImag
   return canvas;
 };
 
+const cacheContainsSource = (cache: Map<number, CanvasImageSource>, source: CanvasImageSource) => {
+  for (const cachedSource of cache.values()) {
+    if (cachedSource === source) return true;
+  }
+
+  return false;
+};
+
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   isVisible,
   isLargeScreen,
@@ -276,12 +284,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     })),
   }), [config, frameTracks]);
   React.useEffect(() => {
-    compositionBitmapCacheRef.current.forEach(scheduleCloseCachedSource);
+    const preservedSource = currentCompositionBitmapRef.current ?? lastCompositionBitmapRef.current;
+    compositionBitmapCacheRef.current.forEach(source => {
+      if (source !== preservedSource) {
+        scheduleCloseCachedSource(source);
+      }
+    });
     compositionBitmapCacheRef.current.clear();
     compositionRenderQueueRef.current.clear();
     compositionImageCacheRef.current.clear();
-    lastCompositionBitmapRef.current = null;
-    currentCompositionBitmapRef.current = null;
+    lastCompositionBitmapRef.current = preservedSource;
+    currentCompositionBitmapRef.current = preservedSource;
     setCompositionCacheVersion(version => version + 1);
   }, [compositionCacheKey]);
 
@@ -378,7 +391,15 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     : null;
   React.useEffect(() => {
     if (cachedCompositionBitmap) {
+      const previousBitmap = lastCompositionBitmapRef.current;
       lastCompositionBitmapRef.current = cachedCompositionBitmap;
+      if (
+        previousBitmap
+        && previousBitmap !== cachedCompositionBitmap
+        && !cacheContainsSource(compositionBitmapCacheRef.current, previousBitmap)
+      ) {
+        scheduleCloseCachedSource(previousBitmap);
+      }
     }
   }, [cachedCompositionBitmap]);
   const stableCompositionBitmap = cachedCompositionBitmap
