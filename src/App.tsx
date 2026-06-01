@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ImagePlus, Maximize2, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
-import { FrameData, CanvasConfig, HistorySnapshot, PendingVideoImport, FrameContextMenuState, LayerData, LayerTrack, FrameTrack } from './types';
+import { FrameData, CanvasConfig, HistorySnapshot, PendingVideoImport, FrameContextMenuState, LayerData, LayerTrack, FrameTrack, TimelineSpacingMode } from './types';
 import { FrameCard } from './components/FrameItem';
 import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { FileDropOverlay } from './components/FileDropOverlay';
@@ -78,59 +78,59 @@ const DITHER_OPTIONS: Array<{
 }> = [
   {
     value: 'none',
-    label: { en: 'Off', zh: '关闭' },
-    description: { en: 'No dithering. Keeps flat colors clean and predictable.', zh: '不启用抖动，保持纯色区域干净稳定。' },
-    pros: { en: 'Least frame noise, smallest flicker risk.', zh: '噪点最少，帧间闪烁风险最低。' },
-    cons: { en: 'Gradients may show stronger color bands.', zh: '渐变区域更容易出现色带。' }
+    label: { en: 'Off', zh: '??' },
+    description: { en: 'No dithering. Keeps flat colors clean and predictable.', zh: '?????????????????' },
+    pros: { en: 'Least frame noise, smallest flicker risk.', zh: '??????????????' },
+    cons: { en: 'Gradients may show stronger color bands.', zh: '???????????????' }
   },
   {
     value: 'FloydSteinberg',
     label: { en: 'Floyd Steinberg', zh: 'Floyd Steinberg' },
-    description: { en: 'Classic error diffusion with strong gradient detail.', zh: '经典误差扩散算法，渐变细节保留较强。' },
-    pros: { en: 'Good for photos and smooth gradients.', zh: '适合照片和柔和渐变。' },
-    cons: { en: 'Can create animated grain between frames.', zh: '可能产生帧间颗粒跳动。' }
+    description: { en: 'Classic error diffusion with strong gradient detail.', zh: '??????????????????' },
+    pros: { en: 'Good for photos and smooth gradients.', zh: '??????????' },
+    cons: { en: 'Can create animated grain between frames.', zh: '???????????' }
   },
   {
     value: 'FloydSteinberg-serpentine',
-    label: { en: 'Floyd Steinberg Serpentine', zh: 'Floyd Steinberg 蛇形' },
-    description: { en: 'Alternates scan direction to reduce directional texture.', zh: '交替扫描方向，降低固定方向纹理。' },
-    pros: { en: 'More balanced texture than standard Floyd.', zh: '纹理比标准算法更均衡。' },
-    cons: { en: 'Still may shimmer on motion.', zh: '运动画面仍可能闪烁。' }
+    label: { en: 'Floyd Steinberg Serpentine', zh: 'Floyd Steinberg ??' },
+    description: { en: 'Alternates scan direction to reduce directional texture.', zh: '????????????????' },
+    pros: { en: 'More balanced texture than standard Floyd.', zh: '???????????' },
+    cons: { en: 'Still may shimmer on motion.', zh: '??????????' }
   },
   {
     value: 'FalseFloydSteinberg',
-    label: { en: 'False Floyd Steinberg', zh: '简化 Floyd Steinberg' },
-    description: { en: 'A lighter diffusion pattern with less processing.', zh: '更轻量的误差扩散模式。' },
-    pros: { en: 'Faster, softer than full Floyd.', zh: '速度更快，颗粒感较轻。' },
-    cons: { en: 'Less accurate on complex gradients.', zh: '复杂渐变还原较弱。' }
+    label: { en: 'False Floyd Steinberg', zh: '?? Floyd Steinberg' },
+    description: { en: 'A lighter diffusion pattern with less processing.', zh: '???????????' },
+    pros: { en: 'Faster, softer than full Floyd.', zh: '???????????' },
+    cons: { en: 'Less accurate on complex gradients.', zh: '?????????' }
   },
   {
     value: 'Stucki',
     label: { en: 'Stucki', zh: 'Stucki' },
-    description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '把误差扩散到更大范围，色调过渡更平滑。' },
-    pros: { en: 'Smooth gradients, richer perceived detail.', zh: '渐变更顺，感知细节更丰富。' },
-    cons: { en: 'More visible texture and larger files.', zh: '纹理更明显，文件可能更大。' }
+    description: { en: 'Spreads error over a wider area for smoother tonal transitions.', zh: '???????????????????' },
+    pros: { en: 'Smooth gradients, richer perceived detail.', zh: '?????????????' },
+    cons: { en: 'More visible texture and larger files.', zh: '?????????????' }
   },
   {
     value: 'Stucki-serpentine',
-    label: { en: 'Stucki Serpentine', zh: 'Stucki 蛇形' },
-    description: { en: 'Stucki with alternating scan direction.', zh: '蛇形扫描版本的 Stucki 算法。' },
-    pros: { en: 'Smoother large gradients with less directional bias.', zh: '大面积渐变更顺，方向性更弱。' },
-    cons: { en: 'Can be noisy in animation.', zh: '动画中可能出现较多噪点。' }
+    label: { en: 'Stucki Serpentine', zh: 'Stucki ??' },
+    description: { en: 'Stucki with alternating scan direction.', zh: '??????? Stucki ???' },
+    pros: { en: 'Smoother large gradients with less directional bias.', zh: '??????????????' },
+    cons: { en: 'Can be noisy in animation.', zh: '????????????' }
   },
   {
     value: 'Atkinson',
     label: { en: 'Atkinson', zh: 'Atkinson' },
-    description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '较克制的扩散方式，观感清爽偏复古。' },
-    pros: { en: 'Crisp edges, often less muddy.', zh: '边缘清晰，不容易发灰。' },
-    cons: { en: 'May lose subtle shadow detail.', zh: '暗部和细微层次可能丢失。' }
+    description: { en: 'A restrained diffusion style with a crisp, retro look.', zh: '?????????????????' },
+    pros: { en: 'Crisp edges, often less muddy.', zh: '???????????' },
+    cons: { en: 'May lose subtle shadow detail.', zh: '????????????' }
   },
   {
     value: 'Atkinson-serpentine',
-    label: { en: 'Atkinson Serpentine', zh: 'Atkinson 蛇形' },
-    description: { en: 'Atkinson with alternating scan direction.', zh: '蛇形扫描版本的 Atkinson 算法。' },
-    pros: { en: 'Crisp result with more even texture.', zh: '结果清晰且纹理更均匀。' },
-    cons: { en: 'Less faithful for soft photos.', zh: '柔和照片的还原度较低。' }
+    label: { en: 'Atkinson Serpentine', zh: 'Atkinson ??' },
+    description: { en: 'Atkinson with alternating scan direction.', zh: '??????? Atkinson ???' },
+    pros: { en: 'Crisp result with more even texture.', zh: '???????????' },
+    cons: { en: 'Less faithful for soft photos.', zh: '???????????' }
   }
 ];
 
@@ -261,6 +261,46 @@ const createBlankTimelineFrame = (
   layers: [],
 });
 
+const normalizeBlankFrameShape = (
+  frame: FrameData,
+  duration: number,
+  startTime: number,
+  canvasWidth: number,
+  canvasHeight: number
+): FrameData => ({
+  ...frame,
+  duration: Math.max(1, Math.round(duration)),
+  startTime: Math.max(0, Math.round(startTime)),
+  isBlank: true,
+  layers: [],
+  width: Math.max(1, frame.width || canvasWidth),
+  height: Math.max(1, frame.height || canvasHeight),
+  originalWidth: Math.max(1, frame.originalWidth || canvasWidth),
+  originalHeight: Math.max(1, frame.originalHeight || canvasHeight),
+});
+
+const appendNormalizedFrame = (target: FrameData[], frame: FrameData, canvasWidth: number, canvasHeight: number) => {
+  if (!frame.isBlank) {
+    target.push(frame);
+    return;
+  }
+
+  const duration = Math.max(1, Math.round(frame.duration || 1));
+  const lastFrame = target[target.length - 1];
+  if (lastFrame?.isBlank) {
+    target[target.length - 1] = normalizeBlankFrameShape(
+      lastFrame,
+      Math.max(1, Math.round(lastFrame.duration || 1)) + duration,
+      lastFrame.startTime ?? 0,
+      canvasWidth,
+      canvasHeight
+    );
+    return;
+  }
+
+  target.push(normalizeBlankFrameShape(frame, duration, frame.startTime ?? 0, canvasWidth, canvasHeight));
+};
+
 const normalizeTimelineFrames = (sourceFrames: FrameData[], canvasWidth: number, canvasHeight: number) => {
   const normalized: FrameData[] = [];
   let cursor = 0;
@@ -285,6 +325,26 @@ const normalizeTimelineFrames = (sourceFrames: FrameData[], canvasWidth: number,
     const requestedStart = typeof frame.startTime === 'number' && Number.isFinite(frame.startTime)
       ? Math.max(0, Math.round(frame.startTime))
       : cursor;
+
+    if (requestedStart < cursor) {
+      const lastFrame = normalized[normalized.length - 1];
+      if (lastFrame?.isBlank) {
+        const blankStart = cursor - Math.max(1, Math.round(lastFrame.duration || 1));
+        const nextCursor = Math.max(blankStart, requestedStart);
+        const nextBlankDuration = nextCursor - blankStart;
+
+        if (nextBlankDuration <= 0) {
+          normalized.pop();
+        } else {
+          normalized[normalized.length - 1] = {
+            ...lastFrame,
+            duration: nextBlankDuration,
+          };
+        }
+        cursor = nextCursor;
+      }
+    }
+
     const gap = requestedStart - cursor;
     if (gap > 0) {
       appendImplicitBlank(gap);
@@ -292,28 +352,38 @@ const normalizeTimelineFrames = (sourceFrames: FrameData[], canvasWidth: number,
 
     const duration = Math.max(1, Math.round(frame.duration || 1));
     const normalizedFrame: FrameData = frame.isBlank
-      ? {
-        ...frame,
-        duration,
-        startTime: cursor,
-        isBlank: true,
-        layers: [],
-        width: Math.max(1, frame.width || canvasWidth),
-        height: Math.max(1, frame.height || canvasHeight),
-        originalWidth: Math.max(1, frame.originalWidth || canvasWidth),
-        originalHeight: Math.max(1, frame.originalHeight || canvasHeight),
-      }
+      ? normalizeBlankFrameShape(frame, duration, cursor, canvasWidth, canvasHeight)
       : {
         ...frame,
         duration,
         startTime: cursor,
       };
 
-    normalized.push(normalizedFrame);
+    appendNormalizedFrame(normalized, normalizedFrame, canvasWidth, canvasHeight);
     cursor += duration;
   });
 
   return normalized;
+};
+
+const reflowFrameStartTimes = (sourceFrames: FrameData[], canvasWidth = 1, canvasHeight = 1) => {
+  let cursor = 0;
+  const reflowed: FrameData[] = [];
+
+  sourceFrames.forEach(frame => {
+    const duration = Math.max(1, Math.round(frame.duration || 1));
+    const nextFrame = frame.isBlank
+      ? normalizeBlankFrameShape(frame, duration, cursor, canvasWidth, canvasHeight)
+      : {
+        ...frame,
+        duration,
+        startTime: cursor,
+      };
+    appendNormalizedFrame(reflowed, nextFrame, canvasWidth, canvasHeight);
+    cursor += duration;
+  });
+
+  return reflowed;
 };
 
 const removeFramesAndCollapseBlankTime = (sourceFrames: FrameData[], idsToRemove: Set<string>) => {
@@ -340,6 +410,77 @@ const removeFramesAndCollapseBlankTime = (sourceFrames: FrameData[], idsToRemove
     nextFrames.push(frame);
     return nextFrames;
   }, []);
+};
+
+const updateFrameStartByPreviousFrame = (sourceFrames: FrameData[], frameId: string, nextStartValue: number) => {
+  const frameIndex = sourceFrames.findIndex(frame => frame.id === frameId);
+  if (frameIndex <= 0) {
+    return sourceFrames.map(frame => (
+      frame.id === frameId ? { ...frame, startTime: Math.max(0, Math.round(nextStartValue)) } : frame
+    ));
+  }
+
+  const segments = getTrackFrameSegments(sourceFrames);
+  const currentSegment = segments[frameIndex];
+  const previousSegment = segments[frameIndex - 1];
+  if (!currentSegment || !previousSegment) return sourceFrames;
+
+  const nextStart = Math.max(previousSegment.start, Math.round(nextStartValue));
+  const delta = nextStart - currentSegment.start;
+  const nextPreviousDuration = nextStart - previousSegment.start;
+
+  return sourceFrames.flatMap((frame, index) => {
+    if (index === frameIndex - 1) {
+      return nextPreviousDuration <= 0 ? [] : [{ ...frame, duration: nextPreviousDuration }];
+    }
+
+    if (index === frameIndex) {
+      return [{ ...frame, startTime: nextStart }];
+    }
+
+    if (index > frameIndex) {
+      const segment = segments[index];
+      return [{ ...frame, startTime: Math.max(0, (segment?.start ?? 0) + delta) }];
+    }
+
+    return [frame];
+  });
+};
+
+const updateFrameDurationWithFollowingFrames = (
+  sourceFrames: FrameData[],
+  frameId: string,
+  nextDurationValue: number,
+  updates: Partial<FrameData>
+) => {
+  const frameIndex = sourceFrames.findIndex(frame => frame.id === frameId);
+  if (frameIndex === -1) return sourceFrames;
+
+  const segments = getTrackFrameSegments(sourceFrames);
+  const currentSegment = segments[frameIndex];
+  if (!currentSegment) return sourceFrames;
+
+  const nextDuration = Math.max(1, Math.round(nextDurationValue));
+  const delta = nextDuration - currentSegment.duration;
+
+  return sourceFrames.map((frame, index) => {
+    if (index === frameIndex) {
+      return updateFrameActiveLayer(frame, {
+        ...updates,
+        duration: nextDuration,
+      });
+    }
+
+    if (index > frameIndex) {
+      const segment = segments[index];
+      return {
+        ...frame,
+        startTime: Math.max(0, (segment?.start ?? 0) + delta),
+      };
+    }
+
+    return frame;
+  });
 };
 
 const App: React.FC = () => {
@@ -521,6 +662,7 @@ const App: React.FC = () => {
   const [previewTimeMs, setPreviewTimeMs] = useState<number | null>(null);
   const [syncPreviewSelection, setSyncPreviewSelection] = useState(true);
   const [autoJumpToSelectedFrame, setAutoJumpToSelectedFrame] = useState(true);
+  const [timelineSpacingMode, setTimelineSpacingMode] = useState<TimelineSpacingMode>('previous');
   const [exportInFrameIndex, setExportInFrameIndex] = useState<number | null>(null);
   const [exportOutFrameIndex, setExportOutFrameIndex] = useState<number | null>(null);
 
@@ -1006,7 +1148,7 @@ const App: React.FC = () => {
     if (files.length === 0) return;
 
     try {
-      showLoadingNotification(language === 'zh' ? '正在读取视频信息...' : 'Reading video info...');
+      showLoadingNotification(language === 'zh' ? '姝ｅ湪璇诲彇瑙嗛淇℃伅...' : 'Reading video info...');
       const metadata = await getVideoMetadata(files[0]);
       const endTime = Math.min(metadata.duration || 5, 5);
       const previewUrl = URL.createObjectURL(files[0]);
@@ -1033,7 +1175,7 @@ const App: React.FC = () => {
       hideNotification();
     } catch (error) {
       console.error('Failed to read video metadata', error);
-      showNotification(language === 'zh' ? '无法读取视频文件' : 'Unable to read video file');
+      showNotification(language === 'zh' ? '鏃犳硶璇诲彇瑙嗛鏂囦欢' : 'Unable to read video file');
     }
   };
 
@@ -1107,7 +1249,7 @@ const App: React.FC = () => {
     };
 
     if (normalizedSettings.endTime <= normalizedSettings.startTime) {
-      showNotification(language === 'zh' ? '出入点不合法：出点需要在入点之后' : 'Invalid in/out points: out point must be after in point');
+      showNotification(language === 'zh' ? '鍑哄叆鐐逛笉鍚堟硶锛氬嚭鐐归渶瑕佸湪鍏ョ偣涔嬪悗' : 'Invalid in/out points: out point must be after in point');
       return;
     }
 
@@ -1120,11 +1262,11 @@ const App: React.FC = () => {
 
       for (let i = 0; i < importConfig.files.length; i++) {
         const file = importConfig.files[i];
-        showLoadingNotification(language === 'zh' ? `正在导入视频 ${i + 1}/${importConfig.files.length}...` : `Importing video ${i + 1}/${importConfig.files.length}...`);
+        showLoadingNotification(language === 'zh' ? `姝ｅ湪瀵煎叆瑙嗛 ${i + 1}/${importConfig.files.length}...` : `Importing video ${i + 1}/${importConfig.files.length}...`);
 
         const videoFrames = await extractVideoFrames(file, normalizedSettings, (current, total) => {
           showLoadingNotification(language === 'zh'
-            ? `正在抽帧 ${current}/${total}...`
+            ? `姝ｅ湪鎶藉抚 ${current}/${total}...`
             : `Extracting frames ${current}/${total}...`);
         });
 
@@ -1137,7 +1279,7 @@ const App: React.FC = () => {
       hideNotification();
 
       if (newFrames.length === 0) {
-        showNotification(language === 'zh' ? '没有从视频中抽取到帧' : 'No frames were extracted from the video');
+        showNotification(language === 'zh' ? '娌℃湁浠庤棰戜腑鎶藉彇鍒板抚' : 'No frames were extracted from the video');
         return;
       }
 
@@ -1158,7 +1300,7 @@ const App: React.FC = () => {
 
           return {
             ...prev,
-            frames: nextFrames,
+            frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height),
             canvasConfig: shouldSetSize && shouldResizeCanvasOnFirstImport ? {
               ...prev.canvasConfig,
               width: firstImageWidth,
@@ -1189,7 +1331,7 @@ const App: React.FC = () => {
 
             return {
               ...prev,
-              frames: [...prev.frames, ...framesToAdd],
+              frames: reflowFrameStartTimes([...prev.frames, ...framesToAdd], prev.canvasConfig.width, prev.canvasConfig.height),
               canvasConfig: nextCanvasConfig,
             };
           }
@@ -1198,7 +1340,7 @@ const App: React.FC = () => {
 
           return {
             ...prev,
-            frames: [...prev.frames, ...scaledFrames],
+            frames: reflowFrameStartTimes([...prev.frames, ...scaledFrames], prev.canvasConfig.width, prev.canvasConfig.height),
           };
         }, 'addFrames');
       }
@@ -1216,7 +1358,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Failed to import video frames', error);
       hideNotification();
-      showNotification(language === 'zh' ? '视频导入失败' : 'Failed to import video');
+      showNotification(language === 'zh' ? '瑙嗛瀵煎叆澶辫触' : 'Failed to import video');
     } finally {
       setIsImportingVideo(false);
     }
@@ -1300,7 +1442,7 @@ const App: React.FC = () => {
 
       const nextFrames = [...prev.frames];
       nextFrames.splice(insertIndex, 0, ...newFrames);
-      return { ...prev, frames: nextFrames };
+      return { ...prev, frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height) };
     });
 
     // Select the new frames
@@ -1337,7 +1479,7 @@ const App: React.FC = () => {
 
       nextFrames.splice(insertIndex, 0, ...newFrames);
 
-      return { ...prev, frames: nextFrames };
+      return { ...prev, frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height) };
     });
 
     // Select the newly created frames
@@ -1416,7 +1558,7 @@ const App: React.FC = () => {
     setAppState(prev => {
       const nextFrames = [...prev.frames];
       nextFrames.splice(insertIndex, 0, ...newFrames);
-      return { ...prev, frames: nextFrames };
+      return { ...prev, frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height) };
     });
 
     const newIds = new Set(newFrames.map(f => f.id));
@@ -1487,7 +1629,7 @@ const App: React.FC = () => {
     setAppState(prev => {
       const nextFrames = [...prev.frames];
       nextFrames.splice(insertIndex, 0, ...newFrames);
-      return { ...prev, frames: nextFrames };
+      return { ...prev, frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height) };
     });
 
     // Select new frames
@@ -1535,9 +1677,9 @@ const App: React.FC = () => {
 
       return {
         ...prev,
-        frames: prev.frames
+        frames: reflowFrameStartTimes(prev.frames
           .filter(frame => frame.id === activeId || !selectedFrameIds.has(frame.id))
-          .map(frame => frame.id === activeId ? mergedFrame : frame),
+          .map(frame => frame.id === activeId ? mergedFrame : frame), prev.canvasConfig.width, prev.canvasConfig.height),
       };
     }, 'mergeFramesAsLayers');
 
@@ -1565,7 +1707,7 @@ const App: React.FC = () => {
       visible: true,
       locked: false,
       opacity: 1,
-      frames: selectedFramesInOrder.map(cloneFrameWithNewIds),
+      frames: reflowFrameStartTimes(selectedFramesInOrder.map(cloneFrameWithNewIds), canvasConfig.width, canvasConfig.height),
     };
 
     setAppState(prev => ({
@@ -1696,13 +1838,13 @@ const App: React.FC = () => {
 
       return {
         ...prev,
-        frames: prev.frames.map(frame => {
+        frames: reflowFrameStartTimes(prev.frames.map(frame => {
           if (!selectedFrameIds.has(frame.id)) {
             return frame;
           }
 
           return reversedSelectedFrames[replacementIndex++];
-        }),
+        })),
       };
     }, 'reorderFrames');
 
@@ -1946,7 +2088,7 @@ const App: React.FC = () => {
 
         return {
           ...prev,
-          frames: nextFrames,
+          frames: reflowFrameStartTimes(nextFrames, prev.canvasConfig.width, prev.canvasConfig.height),
           canvasConfig: shouldSetSize && shouldResizeCanvasOnFirstImport ? {
             ...prev.canvasConfig,
             width: firstImageWidth,
@@ -2106,7 +2248,11 @@ const App: React.FC = () => {
             e.preventDefault();
             setAppState(prev => ({
               ...prev,
-              frames: prev.frames.filter(f => !selectedFrameIds.has(f.id))
+              frames: normalizeTimelineFrames(
+                removeFramesAndCollapseBlankTime(prev.frames, selectedFrameIds),
+                prev.canvasConfig.width,
+                prev.canvasConfig.height
+              )
             }));
             setSelectedFrameIds(new Set());
           }
@@ -2370,7 +2516,7 @@ const App: React.FC = () => {
 
           return {
             ...prev,
-            frames: [...prev.frames, ...framesToAdd],
+            frames: reflowFrameStartTimes([...prev.frames, ...framesToAdd], prev.canvasConfig.width, prev.canvasConfig.height),
             canvasConfig: nextCanvasConfig
           };
         }
@@ -2387,7 +2533,7 @@ const App: React.FC = () => {
 
         return {
           ...prev,
-          frames: [...prev.frames, ...scaledFrames]
+          frames: reflowFrameStartTimes([...prev.frames, ...scaledFrames], prev.canvasConfig.width, prev.canvasConfig.height)
         };
       }, 'addFrames');
 
@@ -2497,7 +2643,7 @@ const App: React.FC = () => {
           if (insertIndex === -1) {
             const oldIndex = prev.frames.findIndex(f => f.id === active.id);
             const newIndex = prev.frames.findIndex(f => f.id === over.id);
-            return { ...prev, frames: arrayMove(prev.frames, oldIndex, newIndex) };
+            return { ...prev, frames: reflowFrameStartTimes(arrayMove(prev.frames, oldIndex, newIndex), prev.canvasConfig.width, prev.canvasConfig.height) };
           }
 
           const activeIndex = prev.frames.findIndex(f => f.id === active.id);
@@ -2511,7 +2657,7 @@ const App: React.FC = () => {
           const newFrames = [...framesWithoutSelected];
           newFrames.splice(insertIndex, 0, ...framesToInsert);
 
-          return { ...prev, frames: newFrames };
+          return { ...prev, frames: reflowFrameStartTimes(newFrames, prev.canvasConfig.width, prev.canvasConfig.height) };
 
         } else {
           // Single item move
@@ -2519,7 +2665,7 @@ const App: React.FC = () => {
           const newIndex = prev.frames.findIndex(f => f.id === over.id);
           return {
             ...prev,
-            frames: arrayMove(prev.frames, oldIndex, newIndex)
+            frames: reflowFrameStartTimes(arrayMove(prev.frames, oldIndex, newIndex), prev.canvasConfig.width, prev.canvasConfig.height)
           };
         }
       }, 'reorderFrames');
@@ -2584,12 +2730,29 @@ const App: React.FC = () => {
 
   // Single update (FrameItem input)
   const updateFrame = (id: string, updates: Partial<FrameData>) => {
+    lastSelectedIdRef.current = id;
+    setSelectedFrameIds(new Set([id]));
+
     const shouldNormalizeTimeline = updates.startTime !== undefined || updates.duration !== undefined;
     setAppState(prev => ({
       ...prev,
       frames: shouldNormalizeTimeline
         ? normalizeTimelineFrames(
-          prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f),
+          (() => {
+            if (updates.startTime !== undefined && timelineSpacingMode === 'previous') {
+              const { startTime, ...restUpdates } = updates;
+              const framesWithOtherUpdates = Object.keys(restUpdates).length > 0
+                ? prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, restUpdates) : f)
+                : prev.frames;
+              return updateFrameStartByPreviousFrame(framesWithOtherUpdates, id, startTime);
+            }
+
+            if (updates.duration !== undefined && timelineSpacingMode === 'previous') {
+              return updateFrameDurationWithFollowingFrames(prev.frames, id, updates.duration, updates);
+            }
+
+            return prev.frames.map(f => f.id === id ? updateFrameActiveLayer(f, updates) : f);
+          })(),
           prev.canvasConfig.width,
           prev.canvasConfig.height
         )
@@ -2802,8 +2965,8 @@ const App: React.FC = () => {
     lastSelectedIdRef.current = null;
   };
 
-  const handleUpdateFrameTrack = (trackId: string, updates: Partial<FrameTrack>) => {
-    setAppState(prev => {
+  const updateFrameTrackState = useCallback((trackId: string, updates: Partial<FrameTrack>) => {
+    return (prev: AppState) => {
       let activeFrames = prev.frames;
       const nextFrameTracks = prev.frameTracks.map(track => {
         if (track.id !== trackId) return track;
@@ -2828,8 +2991,26 @@ const App: React.FC = () => {
         frameTracks: nextFrameTracks,
         frames: activeFrames,
       };
-    }, 'updateFrameTrack');
-  };
+    };
+  }, []);
+
+  const beginFrameTrackEditHistory = useCallback(() => {
+    setAppState(prev => prev, 'updateFrameTrack');
+  }, [setAppState]);
+
+  const handleUpdateFrameTrack = useCallback((
+    trackId: string,
+    updates: Partial<FrameTrack>,
+    options?: { historyMode?: 'push' | 'replace' }
+  ) => {
+    const update = updateFrameTrackState(trackId, updates);
+    if (options?.historyMode === 'replace') {
+      overwriteAppState(update);
+      return;
+    }
+
+    setAppState(update, 'updateFrameTrack');
+  }, [overwriteAppState, setAppState, updateFrameTrackState]);
 
   const handleMoveFrameTrack = (trackId: string, direction: 'up' | 'down') => {
     setAppState(prev => {
@@ -2940,7 +3121,7 @@ const App: React.FC = () => {
           ? nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' })
           : nameB.localeCompare(nameA, undefined, { numeric: true, sensitivity: 'base' });
       });
-      return { ...prev, frames: sorted };
+      return { ...prev, frames: reflowFrameStartTimes(sorted, prev.canvasConfig.width, prev.canvasConfig.height) };
     });
   };
 
@@ -2960,7 +3141,7 @@ const App: React.FC = () => {
 
     setAppState(prev => ({
       ...prev,
-      frames: prev.frames.map(f => ({ ...f, duration }))
+      frames: reflowFrameStartTimes(prev.frames.map(f => ({ ...f, duration })), prev.canvasConfig.width, prev.canvasConfig.height)
     }));
 
     // Sync the other mode's value
@@ -3252,7 +3433,7 @@ const App: React.FC = () => {
     const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
 
     if (!ctx) {
-      showNotification(language === 'zh' ? '无法扫描画布像素' : 'Unable to scan canvas pixels');
+      showNotification(language === 'zh' ? '鏃犳硶鎵弿鐢诲竷鍍忕礌' : 'Unable to scan canvas pixels');
       return;
     }
 
@@ -3346,7 +3527,7 @@ const App: React.FC = () => {
       showNotification(t.autoCropCanvasSuccess);
     } catch (error) {
       console.error('Failed to auto crop canvas', error);
-      showNotification(language === 'zh' ? '自动裁切画布失败' : 'Failed to auto crop canvas');
+      showNotification(language === 'zh' ? '鑷姩瑁佸垏鐢诲竷澶辫触' : 'Failed to auto crop canvas');
     } finally {
       setIsAutoCroppingCanvas(false);
     }
@@ -3394,15 +3575,15 @@ const App: React.FC = () => {
       };
       const apngTexts = {
         ...t.generation,
-        title: language === 'zh' ? '正在生成 APNG...' : 'Generating APNG...',
-        initializing: language === 'zh' ? '正在初始化 APNG 编码器...' : 'Initializing APNG encoder...',
-        rendering: language === 'zh' ? '正在渲染 APNG... {0}%' : 'Rendering APNG... {0}%'
+        title: language === 'zh' ? '姝ｅ湪鐢熸垚 APNG...' : 'Generating APNG...',
+        initializing: language === 'zh' ? '姝ｅ湪鍒濆鍖?APNG 缂栫爜鍣?..' : 'Initializing APNG encoder...',
+        rendering: language === 'zh' ? '姝ｅ湪娓叉煋 APNG... {0}%' : 'Rendering APNG... {0}%'
       };
       const webpTexts = {
         ...t.generation,
-        title: language === 'zh' ? '正在生成 WebP...' : 'Generating WebP...',
-        initializing: language === 'zh' ? '正在初始化 WebP 编码器...' : 'Initializing WebP encoder...',
-        rendering: language === 'zh' ? '正在渲染 WebP... {0}%' : 'Rendering WebP... {0}%'
+        title: language === 'zh' ? '姝ｅ湪鐢熸垚 WebP...' : 'Generating WebP...',
+        initializing: language === 'zh' ? '姝ｅ湪鍒濆鍖?WebP 缂栫爜鍣?..' : 'Initializing WebP encoder...',
+        rendering: language === 'zh' ? '姝ｅ湪娓叉煋 WebP... {0}%' : 'Rendering WebP... {0}%'
       };
       const blob = exportFormat === 'apng'
         ? await generateAPNG(
@@ -3664,7 +3845,7 @@ const App: React.FC = () => {
     if (mergedCount > 0) {
       setAppState(prev => ({
         ...prev,
-        frames: newFrames
+        frames: reflowFrameStartTimes(newFrames, prev.canvasConfig.width, prev.canvasConfig.height)
       }));
       showNotification(t.mergeSuccess.replace('{count}', mergedCount.toString()));
     } else {
@@ -3689,7 +3870,7 @@ const App: React.FC = () => {
     const removedCount = frames.length - newFrames.length;
 
     if (removedCount > 0) {
-      setAppState(prev => ({ ...prev, frames: newFrames }));
+      setAppState(prev => ({ ...prev, frames: reflowFrameStartTimes(newFrames, prev.canvasConfig.width, prev.canvasConfig.height) }));
       showNotification(t.reduceFrames.success.replace('{count}', removedCount.toString()));
     }
   };
@@ -4005,6 +4186,7 @@ const App: React.FC = () => {
             previewTimeMs={previewTimeMs}
             syncPreviewSelection={syncPreviewSelection}
             autoJumpToSelectedFrame={autoJumpToSelectedFrame}
+            dragSpacingMode={timelineSpacingMode}
             exportInFrameIndex={exportInFrameIndex}
             exportOutFrameIndex={exportOutFrameIndex}
             config={canvasConfig}
@@ -4043,12 +4225,14 @@ const App: React.FC = () => {
             }}
             onSyncPreviewSelectionChange={setSyncPreviewSelection}
             onAutoJumpToSelectedFrameChange={setAutoJumpToSelectedFrame}
+            onDragSpacingModeChange={setTimelineSpacingMode}
             onPlayingChange={setIsPlaying}
             onHideEditor={() => setShowCanvasEditor(false)}
             onCanvasUpdate={handleCanvasUpdate}
             onSelectLayer={handleSelectLayer}
             onSelectFrameTrack={handleSelectFrameTrack}
             onSelectFrameBlock={updateFrameSelection}
+            onBeginFrameTrackEdit={beginFrameTrackEditHistory}
             onUpdateFrameTrack={handleUpdateFrameTrack}
             onMoveFrameTrack={handleMoveFrameTrack}
             onAddFrameTrack={handleAddFrameTrack}
@@ -4392,13 +4576,13 @@ const App: React.FC = () => {
       >
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
-            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '导入素材' : 'Imported media'}</div>
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '瀵煎叆绱犳潗' : 'Imported media'}</div>
             <div className="font-mono font-semibold text-blue-300">
               {canvasResizeConfirm?.imageWidth ?? 0} x {canvasResizeConfirm?.imageHeight ?? 0}
             </div>
           </div>
           <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
-            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '当前画布' : 'Current canvas'}</div>
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '褰撳墠鐢诲竷' : 'Current canvas'}</div>
             <div className="font-mono font-semibold text-gray-300">
               {canvasResizeConfirm?.canvasWidth ?? canvasConfig.width} x {canvasResizeConfirm?.canvasHeight ?? canvasConfig.height}
             </div>
@@ -4415,3 +4599,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

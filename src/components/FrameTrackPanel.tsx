@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, Magnet, MoreVertical, Plus, SlidersHorizontal, Trash2, Unlock } from 'lucide-react';
-import type { FrameTrack } from '../types';
+import type { FrameTrack, TimelineSpacingMode } from '../types';
 import { getCompositionDuration, getFrameDuration, getTrackFrameSegments } from '../utils/frameTrackTiming';
 
 interface FrameTrackPanelProps {
@@ -10,6 +10,7 @@ interface FrameTrackPanelProps {
   selectedFrameIds: Set<string>;
   currentFrameIndex: number;
   currentTimeMs: number;
+  dragSpacingMode: TimelineSpacingMode;
   trackLabelWidth?: number;
   embedded?: boolean;
   labels: {
@@ -40,7 +41,9 @@ interface FrameTrackPanelProps {
   onSelectFrame: (index: number) => void;
   onSelectFrameBlock: (frameId: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) => void;
   onSelectTime: (timeMs: number) => void;
-  onUpdateTrack: (trackId: string, updates: Partial<FrameTrack>) => void;
+  onDragSpacingModeChange: (mode: TimelineSpacingMode) => void;
+  onBeginTrackEdit: () => void;
+  onUpdateTrack: (trackId: string, updates: Partial<FrameTrack>, options?: { historyMode?: 'push' | 'replace' }) => void;
   onMoveTrack: (trackId: string, direction: 'up' | 'down') => void;
   onAddTrack: () => void;
   onDeleteTrack: (trackId: string) => void;
@@ -52,6 +55,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
   selectedFrameIds,
   currentFrameIndex,
   currentTimeMs,
+  dragSpacingMode,
   trackLabelWidth = 164,
   embedded = false,
   labels,
@@ -60,6 +64,8 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
   onSelectFrame,
   onSelectFrameBlock,
   onSelectTime,
+  onDragSpacingModeChange,
+  onBeginTrackEdit,
   onUpdateTrack,
   onMoveTrack,
   onAddTrack,
@@ -76,6 +82,10 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     rowWidth: number;
     originalStart: number;
     originalStarts: Map<string, number>;
+    hasHistoryEntry: boolean;
+    pendingDeleteFrameId: string | null;
+    pendingDeleteStart: number | null;
+    latestFrames: FrameTrack['frames'];
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
@@ -120,6 +130,39 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       setMenuPosition(null);
     }
   }, [openMenuTrackId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditableTarget = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable);
+
+      if (isEditableTarget || event.ctrlKey || event.metaKey || event.altKey || event.repeat) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        setIsSnapEnabled(value => !value);
+      } else if (event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        setIsPreviewMode(value => {
+          if (!value) {
+            movingFrameRef.current = null;
+          }
+          return !value;
+        });
+      } else if (event.key.toLowerCase() === 't') {
+        event.preventDefault();
+        onDragSpacingModeChange(dragSpacingMode === 'blank' ? 'previous' : 'blank');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [dragSpacingMode, onDragSpacingModeChange]);
 
   const getTimeFromPointer = (target: HTMLButtonElement, clientX: number) => {
     if (totalDuration <= 0) return 0;
@@ -171,20 +214,18 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     const segments = getTrackFrameSegments(track.frames);
     const frame = track.frames[frameIndex];
     const duration = getFrameDuration(frame);
-    const previousEnd = frameIndex > 0 ? segments[frameIndex - 1].end : 0;
+    const previousSegment = frameIndex > 0 ? segments[frameIndex - 1] : null;
+    const previousEnd = previousSegment?.end ?? 0;
+    const isResizingPreviousFrame = dragSpacingMode === 'previous' && Boolean(previousSegment);
+    const previousBoundary = isResizingPreviousFrame
+      ? (previousSegment?.start ?? 0)
+      : previousSegment?.frame.isBlank ? previousSegment.start : previousEnd;
     const nextStart = frameIndex < segments.length - 1 ? segments[frameIndex + 1].start : Infinity;
-    const minStart = previousEnd;
-    const maxStart = Number.isFinite(nextStart)
-      ? Math.max(minStart, nextStart - duration)
-      : Infinity;
+    const minStart = previousBoundary;
     let nextStartTime = Math.max(minStart, Math.round(proposedStart));
 
-    if (Number.isFinite(maxStart)) {
-      nextStartTime = Math.min(maxStart, nextStartTime);
-    }
-
     if (isSnapEnabled) {
-      const boundaryTargets = new Set<number>([0, previousEnd]);
+      const boundaryTargets = new Set<number>([0, previousBoundary, previousEnd]);
       if (Number.isFinite(nextStart)) {
         boundaryTargets.add(nextStart);
       }
@@ -208,19 +249,86 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
 
       const snapped = snapCandidates.find(candidate => {
         const start = Math.max(minStart, candidate.start);
-        return Number.isFinite(maxStart) ? start <= maxStart : true;
+        return start >= minStart;
       });
 
       if (snapped) {
         nextStartTime = Math.max(minStart, snapped.start);
-        if (Number.isFinite(maxStart)) {
-          nextStartTime = Math.min(maxStart, nextStartTime);
-        }
       }
     }
 
     nextStartTime = Math.max(minStart, nextStartTime);
-    return Number.isFinite(maxStart) ? Math.min(maxStart, nextStartTime) : nextStartTime;
+    return nextStartTime;
+  };
+
+  const updateDraggedFrameStart = (track: FrameTrack, frameId: string, nextStart: number) => {
+    const frameIndex = track.frames.findIndex(frame => frame.id === frameId);
+    if (frameIndex === -1) return track.frames;
+    const segments = getTrackFrameSegments(track.frames);
+    const currentSegment = segments[frameIndex];
+    const delta = nextStart - (currentSegment?.start ?? nextStart);
+
+    if (dragSpacingMode !== 'previous' || frameIndex === 0) {
+      return track.frames.map((frame, index) => {
+        if (index === frameIndex) {
+          return { ...frame, startTime: nextStart };
+        }
+
+        if (index > frameIndex) {
+          const segment = segments[index];
+          return { ...frame, startTime: Math.max(0, (segment?.start ?? 0) + delta) };
+        }
+
+        return frame;
+      });
+    }
+
+    const previousSegment = segments[frameIndex - 1];
+    if (!previousSegment) {
+      return track.frames.map((frame, index) => (
+        index >= frameIndex
+          ? { ...frame, startTime: Math.max(0, (segments[index]?.start ?? 0) + delta) }
+          : frame
+      ));
+    }
+
+    const nextPreviousDuration = Math.max(0, nextStart - previousSegment.start);
+
+    if (nextPreviousDuration <= 0) {
+      return track.frames.map((frame, index) => {
+        if (index === frameIndex) {
+          return { ...frame, startTime: previousSegment.start };
+        }
+
+        if (index === frameIndex - 1) {
+          return { ...frame, duration: 1 };
+        }
+
+        if (index > frameIndex) {
+          const segment = segments[index];
+          return { ...frame, startTime: Math.max(0, (segment?.start ?? 0) + delta) };
+        }
+
+        return frame;
+      });
+    }
+
+    return track.frames.map((frame, index) => {
+      if (index === frameIndex - 1) {
+        return { ...frame, duration: nextPreviousDuration };
+      }
+
+      if (index === frameIndex) {
+        return { ...frame, startTime: nextStart };
+      }
+
+      if (index > frameIndex) {
+        const segment = segments[index];
+        return { ...frame, startTime: Math.max(0, (segment?.start ?? 0) + delta) };
+      }
+
+      return frame;
+    });
   };
 
   const getConstrainedGroupDelta = (
@@ -349,6 +457,10 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
       rowWidth: row.getBoundingClientRect().width,
       originalStart: start,
       originalStarts,
+      hasHistoryEntry: false,
+      pendingDeleteFrameId: null,
+      pendingDeleteStart: null,
+      latestFrames: track.frames,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -364,27 +476,44 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
     if (!targetTrack) return;
     const frameIds = moving.frameIds.length > 0 ? moving.frameIds : [moving.frameId];
 
+    if (!moving.hasHistoryEntry) {
+      onBeginTrackEdit();
+      moving.hasHistoryEntry = true;
+    }
+
     if (frameIds.length > 1) {
       const nextDelta = getConstrainedGroupDelta(targetTrack, frameIds, moving.originalStarts, deltaTime);
       const nextPrimaryStart = (moving.originalStarts.get(moving.frameId) ?? moving.originalStart) + nextDelta;
+      const nextFrames = targetTrack.frames.map(frame => (
+        moving.originalStarts.has(frame.id)
+          ? { ...frame, startTime: (moving.originalStarts.get(frame.id) ?? 0) + nextDelta }
+          : frame
+      ));
+      moving.latestFrames = nextFrames;
 
       onUpdateTrack(moving.trackId, {
-        frames: targetTrack.frames.map(frame => (
-          moving.originalStarts.has(frame.id)
-            ? { ...frame, startTime: (moving.originalStarts.get(frame.id) ?? 0) + nextDelta }
-            : frame
-        )),
-      });
+        frames: nextFrames,
+      }, { historyMode: 'replace' });
       onSelectTime(nextPrimaryStart);
     } else {
       const proposedStart = moving.originalStart + deltaTime;
       const nextStart = getConstrainedFrameStart(targetTrack, moving.frameId, proposedStart);
+      const frameIndex = targetTrack.frames.findIndex(frame => frame.id === moving.frameId);
+      const segments = getTrackFrameSegments(targetTrack.frames);
+      const previousSegment = frameIndex > 0 ? segments[frameIndex - 1] : null;
+      const shouldDeletePreviousFrame = dragSpacingMode === 'previous'
+        && previousSegment
+        && nextStart <= previousSegment.start;
+
+      moving.pendingDeleteFrameId = shouldDeletePreviousFrame ? previousSegment.frame.id : null;
+      moving.pendingDeleteStart = shouldDeletePreviousFrame ? previousSegment.start : null;
+
+      const nextFrames = updateDraggedFrameStart(targetTrack, moving.frameId, nextStart);
+      moving.latestFrames = nextFrames;
 
       onUpdateTrack(moving.trackId, {
-        frames: targetTrack.frames.map(frame => (
-          frame.id === moving.frameId ? { ...frame, startTime: nextStart } : frame
-        )),
-      });
+        frames: nextFrames,
+      }, { historyMode: 'replace' });
       onSelectTime(nextStart);
     }
     event.preventDefault();
@@ -394,6 +523,22 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
   const stopFrameDragging = (event: React.PointerEvent<HTMLDivElement>) => {
     const moving = movingFrameRef.current;
     if (!moving || moving.pointerId !== event.pointerId) return;
+    const shouldCommitDelete = event.type === 'pointerup' && moving.pendingDeleteFrameId !== null;
+
+    if (shouldCommitDelete && moving.pendingDeleteFrameId) {
+      const deleteFrameId = moving.pendingDeleteFrameId;
+      const targetStart = moving.pendingDeleteStart ?? 0;
+
+      onUpdateTrack(moving.trackId, {
+        frames: moving.latestFrames
+          .filter(frame => frame.id !== deleteFrameId)
+          .map(frame => (
+            frame.id === moving.frameId
+              ? { ...frame, startTime: targetStart }
+              : frame
+          )),
+      }, { historyMode: moving.hasHistoryEntry ? 'replace' : 'push' });
+    }
 
     movingFrameRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -554,12 +699,26 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
               : 'border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
               }`}
             title={isPreviewMode
-              ? '预览模式：拖动任意轨道或帧块只移动预览时间，不调整帧位置'
-              : '调节模式：可拖动帧块调整开始时间；拖空白区域仍移动预览时间'
+              ? '预览模式：拖动任意轨道或帧块只移动预览时间，不调整帧位置（A）'
+              : '调节模式：可拖动帧块调整开始时间；拖空白区域仍移动预览时间（A）'
             }
           >
             <SlidersHorizontal size={12} />
             {isPreviewMode ? '预览' : '调节'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onDragSpacingModeChange(dragSpacingMode === 'blank' ? 'previous' : 'blank')}
+            className={`flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${dragSpacingMode === 'previous'
+              ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600 hover:text-white'
+              }`}
+            title={dragSpacingMode === 'previous'
+              ? '联动模式：拖动或调节当前帧时，前后帧一起联动吸附（T）'
+              : '拖动当前帧时在前方自动创建或调整空白帧（T）'
+            }
+          >
+            {dragSpacingMode === 'previous' ? '联动' : '空白'}
           </button>
           <button
             type="button"
@@ -568,7 +727,7 @@ export const FrameTrackPanel: React.FC<FrameTrackPanelProps> = ({
               ? 'border-blue-500/60 bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
               : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600 hover:text-white'
               }`}
-            title={isSnapEnabled ? '吸附开启' : '吸附关闭'}
+            title={isSnapEnabled ? '吸附开启（N）' : '吸附关闭（N）'}
           >
             <Magnet size={12} />
             吸附

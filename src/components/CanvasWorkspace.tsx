@@ -1,6 +1,6 @@
 import React from 'react';
 import { Crosshair, Layout, Minimize2, Play, ScanEye } from 'lucide-react';
-import type { CanvasConfig, FrameData, FrameTrack, LayerData } from '../types';
+import type { CanvasConfig, FrameData, FrameTrack, LayerData, TimelineSpacingMode } from '../types';
 import type { FrameLabels, TranslationSchema } from '../utils/translations';
 import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from '../utils/frameTrackTiming';
 import { getFrameLayers } from '../utils/layerHelpers';
@@ -30,6 +30,7 @@ interface CanvasWorkspaceProps {
   previewTimeMs: number | null;
   syncPreviewSelection: boolean;
   autoJumpToSelectedFrame: boolean;
+  dragSpacingMode: TimelineSpacingMode;
   exportInFrameIndex: number | null;
   exportOutFrameIndex: number | null;
   config: CanvasConfig;
@@ -68,13 +69,15 @@ interface CanvasWorkspaceProps {
   };
   onSyncPreviewSelectionChange: (enabled: boolean) => void;
   onAutoJumpToSelectedFrameChange: (enabled: boolean) => void;
+  onDragSpacingModeChange: (mode: TimelineSpacingMode) => void;
   onPlayingChange: (playing: boolean) => void;
   onHideEditor: () => void;
   onCanvasUpdate: (updates: Partial<FrameData>, commit?: boolean) => void;
   onSelectLayer?: (layerId: string) => void;
   onSelectFrameTrack: (trackId: string) => void;
   onSelectFrameBlock: (frameId: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) => void;
-  onUpdateFrameTrack: (trackId: string, updates: Partial<FrameTrack>) => void;
+  onBeginFrameTrackEdit: () => void;
+  onUpdateFrameTrack: (trackId: string, updates: Partial<FrameTrack>, options?: { historyMode?: 'push' | 'replace' }) => void;
   onMoveFrameTrack: (trackId: string, direction: 'up' | 'down') => void;
   onAddFrameTrack: () => void;
   onDeleteFrameTrack: (trackId: string) => void;
@@ -168,6 +171,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   previewTimeMs,
   syncPreviewSelection,
   autoJumpToSelectedFrame,
+  dragSpacingMode,
   exportInFrameIndex,
   exportOutFrameIndex,
   config,
@@ -179,12 +183,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   labels,
   onSyncPreviewSelectionChange,
   onAutoJumpToSelectedFrameChange,
+  onDragSpacingModeChange,
   onPlayingChange,
   onHideEditor,
   onCanvasUpdate,
   onSelectLayer,
   onSelectFrameTrack,
   onSelectFrameBlock,
+  onBeginFrameTrackEdit,
   onUpdateFrameTrack,
   onMoveFrameTrack,
   onAddFrameTrack,
@@ -483,6 +489,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             selectedFrameIds={selectedFrameIds}
             currentFrameIndex={currentTimelineFrameIndex}
             currentTimeMs={currentTimelineTimeMs}
+            dragSpacingMode={dragSpacingMode}
             labels={{
               title: labels.frameTracks,
               empty: labels.noFrameTracks,
@@ -511,6 +518,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onSelectFrame={onSelectFrameByIndex}
             onSelectFrameBlock={onSelectFrameBlock}
             onSelectTime={onSelectTimelineTime}
+            onDragSpacingModeChange={onDragSpacingModeChange}
+            onBeginTrackEdit={onBeginFrameTrackEdit}
             onUpdateTrack={onUpdateFrameTrack}
             onMoveTrack={onMoveFrameTrack}
             onAddTrack={onAddFrameTrack}

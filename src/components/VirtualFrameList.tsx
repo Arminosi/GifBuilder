@@ -223,7 +223,7 @@ export const VirtualFrameList = forwardRef<VirtualFrameListHandle, VirtualFrameL
               itemCount={rowCount}
               itemSize={itemHeight}
               width={width}
-              className="custom-scrollbar"
+              className="custom-scrollbar box-border pt-2"
               itemData={{
                 frames,
                 columnCount: safeColumnCount,
