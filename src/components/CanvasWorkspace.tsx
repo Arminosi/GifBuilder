@@ -12,7 +12,7 @@ import { Timeline } from './Timeline';
 
 const FRAME_TRACK_LABEL_WIDTH = 164;
 const PLAYBACK_CACHE_LOOKAHEAD = 8;
-const IDLE_CACHE_LOOKAHEAD = 2;
+const IDLE_CACHE_LOOKAHEAD = 16;
 const MAX_COMPOSITION_CACHE_SIZE = 32;
 
 interface CanvasWorkspaceProps {
@@ -216,10 +216,13 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const isMultiTrackMode = frameTracks.length > 1;
   const compositionBitmapCacheRef = React.useRef<Map<number, CanvasImageSource>>(new Map());
   const compositionRenderQueueRef = React.useRef<Set<number>>(new Set());
+  const compositionRenderPromisesRef = React.useRef<Map<number, Promise<void>>>(new Map());
   const compositionImageCacheRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
   const lastCompositionBitmapRef = React.useRef<CanvasImageSource | null>(null);
   const currentCompositionBitmapRef = React.useRef<CanvasImageSource | null>(null);
+  const compositionCacheGenerationRef = React.useRef(0);
   const [compositionCacheVersion, setCompositionCacheVersion] = React.useState(0);
+  const [isPrimingPlayback, setIsPrimingPlayback] = React.useState(false);
   const timelineFrames = timelineSegments.map((segment, index) => ({
     id: `timeline-segment-${index}`,
     duration: segment.duration,
@@ -283,37 +286,22 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       })),
     })),
   }), [config, frameTracks]);
-  React.useEffect(() => {
-    const preservedSource = currentCompositionBitmapRef.current ?? lastCompositionBitmapRef.current;
-    compositionBitmapCacheRef.current.forEach(source => {
-      if (source !== preservedSource) {
-        scheduleCloseCachedSource(source);
-      }
-    });
-    compositionBitmapCacheRef.current.clear();
-    compositionRenderQueueRef.current.clear();
-    compositionImageCacheRef.current.clear();
-    lastCompositionBitmapRef.current = preservedSource;
-    currentCompositionBitmapRef.current = preservedSource;
-    setCompositionCacheVersion(version => version + 1);
-  }, [compositionCacheKey]);
 
-  React.useEffect(() => {
-    if (!isVisible || !isMultiTrackMode || timelineSegments.length === 0) return;
+  const renderCompositionSegment = React.useCallback((segment: typeof timelineSegments[number]) => {
+    const key = segment.start;
+    if (compositionBitmapCacheRef.current.has(key)) {
+      return Promise.resolve();
+    }
 
-    let cancelled = false;
-    const lookahead = isPlaying ? PLAYBACK_CACHE_LOOKAHEAD : IDLE_CACHE_LOOKAHEAD;
-    const startIndex = getTimelineSegmentIndexAtTime(timelineSegments, currentTimelineTimeMs);
-    const segmentsToWarm = Array.from({ length: Math.min(lookahead, timelineSegments.length) }, (_, offset) => {
-      return timelineSegments[(startIndex + offset) % timelineSegments.length];
-    });
+    const existingRender = compositionRenderPromisesRef.current.get(key);
+    if (existingRender) {
+      return existingRender;
+    }
 
-    const renderSegment = async (segment: typeof timelineSegments[number]) => {
-      const key = segment.start;
-      if (compositionBitmapCacheRef.current.has(key) || compositionRenderQueueRef.current.has(key)) return;
+    const renderGeneration = compositionCacheGenerationRef.current;
+    compositionRenderQueueRef.current.add(key);
 
-      compositionRenderQueueRef.current.add(key);
-
+    const renderPromise = (async () => {
       try {
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, config.width);
@@ -326,10 +314,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           imageCache: compositionImageCacheRef.current,
         });
 
-        if (cancelled) return;
-
         const bitmap = await createCachedSource(canvas);
-        if (cancelled) {
+        if (renderGeneration !== compositionCacheGenerationRef.current) {
           closeCachedSource(bitmap);
           return;
         }
@@ -356,17 +342,61 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         console.warn('Failed to warm composition preview cache', error);
       } finally {
         compositionRenderQueueRef.current.delete(key);
+        compositionRenderPromisesRef.current.delete(key);
       }
-    };
+    })();
 
-    segmentsToWarm.forEach(segment => {
-      void renderSegment(segment);
+    compositionRenderPromisesRef.current.set(key, renderPromise);
+    return renderPromise;
+  }, [config, frameTracks]);
+
+  React.useEffect(() => {
+    compositionCacheGenerationRef.current += 1;
+    const preservedSource = currentCompositionBitmapRef.current ?? lastCompositionBitmapRef.current;
+    compositionBitmapCacheRef.current.forEach(source => {
+      if (source !== preservedSource) {
+        scheduleCloseCachedSource(source);
+      }
     });
+    compositionBitmapCacheRef.current.clear();
+    compositionRenderQueueRef.current.clear();
+    compositionRenderPromisesRef.current.clear();
+    compositionImageCacheRef.current.clear();
+    lastCompositionBitmapRef.current = preservedSource;
+    currentCompositionBitmapRef.current = preservedSource;
+    setCompositionCacheVersion(version => version + 1);
+  }, [compositionCacheKey]);
+
+  React.useEffect(() => {
+    if (!isVisible || !isMultiTrackMode || timelineSegments.length === 0) return;
+
+    let cancelled = false;
+    const lookahead = isPlaying ? PLAYBACK_CACHE_LOOKAHEAD : IDLE_CACHE_LOOKAHEAD;
+    const startIndex = getTimelineSegmentIndexAtTime(timelineSegments, currentTimelineTimeMs);
+    const segmentsToWarm = Array.from({ length: Math.min(lookahead, timelineSegments.length) }, (_, offset) => {
+      return timelineSegments[(startIndex + offset) % timelineSegments.length];
+    });
+
+    if (isPlaying) {
+      segmentsToWarm.forEach(segment => {
+        void renderCompositionSegment(segment);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      for (const segment of segmentsToWarm) {
+        if (cancelled) return;
+        await renderCompositionSegment(segment);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [isVisible, isMultiTrackMode, isPlaying, currentTimelineTimeMs, timelineSignature, compositionCacheKey]);
+  }, [isVisible, isMultiTrackMode, isPlaying, currentTimelineTimeMs, timelineSignature, compositionCacheKey, renderCompositionSegment]);
 
   React.useEffect(() => {
     return () => {
@@ -416,6 +446,41 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     && (canvasPreviewBitmap || (canvasFrame && (!activeTrackFrameAtCurrentTime || !selectedFrameIds.has(activeTrackFrameAtCurrentTime.id))))
   );
 
+  const handlePlaybackClick = React.useCallback(async () => {
+    if (isPlaying) {
+      onPlayingChange(false);
+      return;
+    }
+
+    if (!isMultiTrackMode || timelineSegments.length === 0) {
+      onPlayingChange(true);
+      return;
+    }
+
+    if (isPrimingPlayback) return;
+
+    setIsPrimingPlayback(true);
+    try {
+      const startIndex = getTimelineSegmentIndexAtTime(timelineSegments, currentTimelineTimeMs);
+      const segmentsToPrime = Array.from({ length: Math.min(PLAYBACK_CACHE_LOOKAHEAD, timelineSegments.length) }, (_, offset) => (
+        timelineSegments[(startIndex + offset) % timelineSegments.length]
+      ));
+
+      await Promise.all(segmentsToPrime.map(segment => renderCompositionSegment(segment)));
+      onPlayingChange(true);
+    } finally {
+      setIsPrimingPlayback(false);
+    }
+  }, [
+    currentTimelineTimeMs,
+    isMultiTrackMode,
+    isPlaying,
+    isPrimingPlayback,
+    onPlayingChange,
+    renderCompositionSegment,
+    timelineSegments,
+  ]);
+
   if (!isVisible) return null;
 
   return (
@@ -457,11 +522,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onPlayingChange(!isPlaying)}
+                onClick={handlePlaybackClick}
+                disabled={isPrimingPlayback}
                 className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${isPlaying
                   ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
                   : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                  }`}
+                  } disabled:cursor-wait disabled:opacity-70`}
                 title={isPlaying ? labels.preview.pause : labels.preview.play}
               >
                 {isPlaying ? <div className="w-3 h-3 bg-current rounded-sm" /> : <Play size={12} fill="currentColor" />}

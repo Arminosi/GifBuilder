@@ -1,8 +1,10 @@
 
 import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
 import GIF from 'gif.js';
-import { createCompositionTimeline, findFrameAtTime } from './frameTrackTiming';
-import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
+import { createCompositionTimeline } from './frameTrackTiming';
+import { buildTrackRenderCache, findSegmentAtTime, renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
+import { createExportStatusTimer } from './exportStatusTimer';
+import type { ExportTimingSnapshot } from './exportStatusTimer';
 
 // Cache the worker blob URL to avoid fetching it every time
 let workerBlobUrl: string | null = null;
@@ -311,6 +313,25 @@ const extractDominantColors = (imageData: ImageData, maxColors: number = 256): M
   return new Map(sorted);
 };
 
+const extractDominantColorsFromCanvasSample = (
+  sourceCanvas: HTMLCanvasElement,
+  sampleCanvas: HTMLCanvasElement,
+  sampleCtx: CanvasRenderingContext2D,
+  maxColors: number = 256
+) => {
+  const sampleMaxWidth = 160;
+  const scale = Math.min(1, sampleMaxWidth / Math.max(1, sourceCanvas.width));
+  const sampleWidth = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const sampleHeight = Math.max(1, Math.round(sourceCanvas.height * scale));
+
+  sampleCanvas.width = sampleWidth;
+  sampleCanvas.height = sampleHeight;
+  sampleCtx.clearRect(0, 0, sampleWidth, sampleHeight);
+  sampleCtx.drawImage(sourceCanvas, 0, 0, sampleWidth, sampleHeight);
+
+  return extractDominantColors(sampleCtx.getImageData(0, 0, sampleWidth, sampleHeight), maxColors);
+};
+
 // Helper to calculate color distance (perceptual)
 const colorDistance = (color1: number, color2: number): number => {
   const r1 = (color1 >> 16) & 0xFF;
@@ -426,6 +447,58 @@ export interface StatusTexts {
   completed: string;
 }
 
+const getGifWorkerCount = () => {
+  const coreCount = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? navigator.hardwareConcurrency
+    : 4;
+
+  return Math.max(2, Math.min(6, coreCount - 1));
+};
+
+const getResolvedLayersSignature = (layers: LayerData[] = []) => {
+  return layers.map(layer => [
+    layer.id,
+    layer.type,
+    layer.visible,
+    layer.opacity,
+    layer.blendMode ?? '',
+    layer.x,
+    layer.y,
+    layer.width,
+    layer.height,
+    layer.rotation ?? 0,
+    layer.source?.previewUrl ?? '',
+  ].join(':')).join('|');
+};
+
+const mergeIdenticalCompositionSegments = (
+  compositionSegments: ReturnType<typeof createCompositionTimeline> | null,
+  resolvedTrackLayersByTime: Map<number, LayerData[]> | null
+) => {
+  if (!compositionSegments || !resolvedTrackLayersByTime || compositionSegments.length <= 1) {
+    return compositionSegments;
+  }
+
+  const merged: ReturnType<typeof createCompositionTimeline> = [];
+  let previousSignature = '';
+
+  compositionSegments.forEach(segment => {
+    const signature = getResolvedLayersSignature(resolvedTrackLayersByTime.get(segment.start) ?? []);
+    const previous = merged[merged.length - 1];
+
+    if (previous && signature === previousSignature) {
+      previous.duration += segment.duration;
+      previous.end = segment.end;
+      return;
+    }
+
+    merged.push({ ...segment });
+    previousSignature = signature;
+  });
+
+  return merged;
+};
+
 export const generateGIF = async (
   frames: FrameData[],
   config: CanvasConfig,
@@ -436,7 +509,8 @@ export const generateGIF = async (
   customTransparentColor?: string | null,
   globalLayers: LayerData[] = [],
   layerTracks: LayerTrack[] = [],
-  frameTracks: FrameTrack[] = []
+  frameTracks: FrameTrack[] = [],
+  onTiming?: (timing: ExportTimingSnapshot) => void
 ): Promise<Blob> => {
 
   const t = texts || {
@@ -448,24 +522,44 @@ export const generateGIF = async (
     compressionAttempt: "[Compression {0}] ",
     completed: "Generation complete!"
   };
+  const statusTimer = createExportStatusTimer(onStatus, onTiming);
 
   const firstTrackFrame = frameTracks.flatMap(track => track.frames)[0];
   const compositionSegments = frameTracks.length > 0 && (frames[0] || firstTrackFrame) ? createCompositionTimeline(frameTracks, frames) : null;
-  const sourceFrames = compositionSegments
-    ? compositionSegments.map((segment, index) => ({
+  const { trackSegments, resolvedTrackLayers } = buildTrackRenderCache(frameTracks, compositionSegments);
+
+  // Apply frame deduplication to reduce file size (enabled by default)
+  const enableDeduplication = config.enableFrameDeduplication !== false;
+  if (enableDeduplication) statusTimer.report("Optimizing frames...", 'optimizing');
+  const exportCompositionSegments = enableDeduplication
+    ? mergeIdenticalCompositionSegments(compositionSegments, resolvedTrackLayers)
+    : compositionSegments;
+  const singleTrackFrameBySegment = frameTracks.length === 1 && exportCompositionSegments
+    ? exportCompositionSegments?.map(segment => findSegmentAtTime(trackSegments.get(frameTracks[0].id) ?? [], segment.start)?.frame ?? null) ?? null
+    : null;
+  const singleTrackFrameIndexById = singleTrackFrameBySegment
+    ? new Map(frameTracks[0].frames.map((frame, index) => [frame.id, index]))
+    : null;
+  const sourceFrames = exportCompositionSegments
+    ? exportCompositionSegments.map((segment, index) => ({
       ...(frames[0] ?? firstTrackFrame),
       id: `composition-${index}`,
       duration: segment.duration,
     }))
     : frames;
 
-  // Apply frame deduplication to reduce file size (enabled by default)
-  const enableDeduplication = config.enableFrameDeduplication !== false;
-  if (onStatus && enableDeduplication) onStatus("Optimizing frames...");
-  const optimizedFrames = enableDeduplication && !compositionSegments ? deduplicateFrames(sourceFrames) : sourceFrames;
+  const optimizedFrames = enableDeduplication && !exportCompositionSegments ? deduplicateFrames(sourceFrames) : sourceFrames;
 
   // Use optimized frames for generation
   const framesToProcess = optimizedFrames;
+  const renderedSourceCacheBytes = framesToProcess.length * Math.max(1, config.width) * Math.max(1, config.height) * 4;
+  const shouldCacheRenderedSources = Boolean(
+    targetSizeMB
+    && targetSizeMB > 0
+    && !config.transparent
+    && renderedSourceCacheBytes <= 256 * 1024 * 1024
+  );
+  const renderedSourceFrames: Array<HTMLCanvasElement | undefined> | null = shouldCacheRenderedSources ? [] : null;
 
   // Helper for simple string formatting
   const format = (str: string, ...args: (string | number)[]) => {
@@ -475,7 +569,7 @@ export const generateGIF = async (
   };
 
   // Load worker script before starting
-  if (onStatus) onStatus(t.initializing);
+  statusTimer.report(t.initializing, 'initializing');
   const workerScript = await getWorkerUrl();
 
   const createGif = async (currentConfig: CanvasConfig, statusPrefix: string = '', progressOffset: number = 0, progressScale: number = 1): Promise<Blob> => {
@@ -495,13 +589,29 @@ export const generateGIF = async (
     } else if (currentConfig.transparent) {
       // For auto transparent mode, find a common unused color across all frames
       // This will be used as the global transparency key
-      if (onStatus) onStatus("Finding common transparent key color...");
+      statusTimer.report("Finding common transparent key color...", `${statusPrefix}transparent-key`);
       globalTransparentKey = await findCommonUnusedColor(framesToProcess, currentConfig.alphaThreshold ?? 128);
     }
 
+    const isSourceRenderConfig = currentConfig.width === config.width
+      && currentConfig.height === config.height
+      && currentConfig.transparent === config.transparent;
+    let lastProcessingStatusAt = 0;
+    const reportProcessingStatus = (index: number) => {
+      if (!onStatus) return;
+
+      const now = performance.now();
+      const isFirst = index === 0;
+      const isLast = index === framesToProcess.length - 1;
+      if (!isFirst && !isLast && now - lastProcessingStatusAt < 80) return;
+
+      lastProcessingStatusAt = now;
+      statusTimer.report(`${statusPrefix}${format(t.processingFrameN, index + 1, framesToProcess.length)}`, `${statusPrefix}processing`);
+    };
+
     return new Promise((resolve, reject) => {
       const gif = new GIF({
-        workers: 2,
+        workers: getGifWorkerCount(),
         quality: currentConfig.quality,
         width: currentConfig.width,
         height: currentConfig.height,
@@ -518,7 +628,7 @@ export const generateGIF = async (
       gif.on('progress', (p) => {
         const globalProgress = progressOffset + (p * progressScale);
         onProgress(globalProgress);
-        if (onStatus) onStatus(`${statusPrefix}${format(t.rendering, (globalProgress * 100).toFixed(0))}`);
+        statusTimer.report(`${statusPrefix}${format(t.rendering, (globalProgress * 100).toFixed(0))}`, `${statusPrefix}encoding`);
       });
 
       gif.on('finished', (blob) => {
@@ -526,7 +636,7 @@ export const generateGIF = async (
       });
 
       const processFrames = async () => {
-        if (onStatus) onStatus(`${statusPrefix}${t.processingFrames}`);
+        statusTimer.report(`${statusPrefix}${t.processingFrames}`, `${statusPrefix}processing`);
         const canvas = document.createElement('canvas');
         canvas.width = currentConfig.width;
         canvas.height = currentConfig.height;
@@ -540,60 +650,74 @@ export const generateGIF = async (
         // Color smoothing state
         let prevFrameColors: Map<number, number> | null = null;
         const imageCache = new Map<string, HTMLImageElement>();
+        const colorSampleCanvas = document.createElement('canvas');
+        const colorSampleCtx = colorSampleCanvas.getContext('2d', { willReadFrequently: true });
 
         for (let i = 0; i < framesToProcess.length; i++) {
           const frame = framesToProcess[i];
-          if (onStatus) onStatus(`${statusPrefix}${format(t.processingFrameN, i + 1, framesToProcess.length)}`);
+          reportProcessingStatus(i);
 
           const alphaThreshold = currentConfig.alphaThreshold ?? 128;
 
           try {
-            const renderOptions = {
-              timelineFrameIndex: i,
-              timelineTimeMs: compositionSegments?.[i]?.start,
-              sourceCanvasWidth: config.width,
-              sourceCanvasHeight: config.height,
-              imageCache,
-              transparentKey: currentConfig.transparent && globalTransparentKey
-                ? {
-                  str: globalTransparentKey.str,
-                  hex: globalTransparentKey.hex,
-                  alphaThreshold,
-                }
-                : null,
-            };
+            const renderedSourceFrame = renderedSourceFrames?.[i] ?? null;
 
-            if (frameTracks.length > 1) {
-              await renderFrameTracksToCanvas(frameTracks, frame, currentConfig, ctx, renderOptions);
+            if (renderedSourceFrame) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(renderedSourceFrame, 0, 0, canvas.width, canvas.height);
             } else {
-              const singleTrackFrame = frameTracks.length === 1 && compositionSegments?.[i]
-                ? findFrameAtTime(frameTracks[0].frames, compositionSegments[i].start)?.frame
-                : null;
-              await renderFrameToCanvas(singleTrackFrame ?? frame, currentConfig, ctx, {
-                ...renderOptions,
-                timelineTimeMs: singleTrackFrame ? undefined : renderOptions.timelineTimeMs,
-                timelineFrameIndex: singleTrackFrame
-                  ? frameTracks[0].frames.findIndex(item => item.id === singleTrackFrame.id)
-                  : renderOptions.timelineFrameIndex,
-                globalLayers,
-                layerTracks,
-              });
+              const renderOptions = {
+                timelineFrameIndex: i,
+                timelineTimeMs: exportCompositionSegments?.[i]?.start,
+                sourceCanvasWidth: config.width,
+                sourceCanvasHeight: config.height,
+                imageCache,
+                trackSegments,
+                resolvedTrackLayers: resolvedTrackLayers ?? undefined,
+                transparentKey: currentConfig.transparent && globalTransparentKey
+                  ? {
+                    str: globalTransparentKey.str,
+                    hex: globalTransparentKey.hex,
+                    alphaThreshold,
+                  }
+                  : null,
+              };
+
+              if (frameTracks.length > 1) {
+                await renderFrameTracksToCanvas(frameTracks, frame, currentConfig, ctx, renderOptions);
+              } else {
+                const singleTrackFrame = singleTrackFrameBySegment?.[i] ?? null;
+                await renderFrameToCanvas(singleTrackFrame ?? frame, currentConfig, ctx, {
+                  ...renderOptions,
+                  timelineTimeMs: singleTrackFrame ? undefined : renderOptions.timelineTimeMs,
+                  timelineFrameIndex: singleTrackFrame
+                    ? (singleTrackFrameIndexById?.get(singleTrackFrame.id) ?? 0)
+                    : renderOptions.timelineFrameIndex,
+                  globalLayers,
+                  layerTracks,
+                });
+              }
+
+              if (renderedSourceFrames && isSourceRenderConfig && !renderedSourceFrames[i]) {
+                const sourceCanvas = document.createElement('canvas');
+                sourceCanvas.width = canvas.width;
+                sourceCanvas.height = canvas.height;
+                sourceCanvas.getContext('2d')?.drawImage(canvas, 0, 0);
+                renderedSourceFrames[i] = sourceCanvas;
+              }
             }
 
             // Apply color smoothing if enabled
-            if (currentConfig.enableColorSmoothing && i > 0) {
+            if (currentConfig.enableColorSmoothing && colorSampleCtx && i > 0) {
               try {
-                // Get current frame's image data
-                const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-                // Extract dominant colors from current frame
-                const currentColors = extractDominantColors(currentImageData, 256);
+                const currentColors = extractDominantColorsFromCanvasSample(canvas, colorSampleCanvas, colorSampleCtx, 256);
 
                 if (prevFrameColors && prevFrameColors.size > 0) {
                   // Create color mapping between previous and current frame
                   const colorMapping = createColorMapping(prevFrameColors, currentColors, 30);
 
                   if (colorMapping.size > 0) {
+                    const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     // Apply color smoothing
                     const smoothedImageData = applyColorSmoothing(currentImageData, colorMapping);
                     ctx.putImageData(smoothedImageData, 0, 0);
@@ -607,11 +731,10 @@ export const generateGIF = async (
               } catch (error) {
                 console.warn(`  Color smoothing failed for frame ${i + 1}:`, error);
               }
-            } else if (currentConfig.enableColorSmoothing && i === 0) {
+            } else if (currentConfig.enableColorSmoothing && colorSampleCtx && i === 0) {
               // First frame: just extract colors for next frame
               try {
-                const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                prevFrameColors = extractDominantColors(currentImageData, 256);
+                prevFrameColors = extractDominantColorsFromCanvasSample(canvas, colorSampleCanvas, colorSampleCtx, 256);
               } catch (error) {
                 console.warn(`  Color extraction failed for frame ${i + 1}:`, error);
               }
@@ -632,7 +755,7 @@ export const generateGIF = async (
           }
         }
 
-        if (onStatus) onStatus(`${statusPrefix}${format(t.rendering, 0)}`);
+        statusTimer.report(`${statusPrefix}${format(t.rendering, 0)}`, `${statusPrefix}encoding`);
         gif.render();
       };
 
@@ -661,7 +784,7 @@ export const generateGIF = async (
     while (blob.size > targetBytes && attempts < maxAttempts) {
       attempts++;
       const currentSizeMB = (blob.size / 1024 / 1024).toFixed(2);
-      if (onStatus) onStatus(format(t.compressing, currentSizeMB, targetSizeMB, attempts));
+      statusTimer.report(format(t.compressing, currentSizeMB, targetSizeMB, attempts), `compression-${attempts}`);
 
       const currentSize = blob.size;
       const ratio = targetBytes / currentSize;
@@ -725,7 +848,7 @@ export const generateGIF = async (
     }
   }
 
-  if (onStatus) onStatus(t.completed);
+  statusTimer.complete(t.completed);
   onProgress(1);
   return blob;
 };

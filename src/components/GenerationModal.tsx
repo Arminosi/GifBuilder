@@ -1,12 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, XIcon } from 'lucide-react';
+import type { ExportTimingSnapshot } from '../utils/exportStatusTimer';
 
 interface GenerationModalProps {
   isOpen: boolean;
   progress: number;
   progressText: string;
+  exportTiming?: ExportTimingSnapshot | null;
   generatedGif: string | null;
   format?: 'gif' | 'apng' | 'webp';
+  timingLabels?: {
+    stage: string;
+    total: string;
+  };
   onClose: () => void;
   t: {
     close: string;
@@ -20,11 +26,30 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
   isOpen,
   progress,
   progressText,
+  exportTiming,
   generatedGif,
   format = 'gif',
+  timingLabels = { stage: 'Stage', total: 'Total' },
   onClose,
   t
 }) => {
+  const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const [clockNow, setClockNow] = useState(getNow);
+
+  useEffect(() => {
+    setClockNow(getNow());
+
+    if (!isOpen || generatedGif || !exportTiming || exportTiming.completedAt) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setClockNow(getNow());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [isOpen, generatedGif, exportTiming?.stageKey, exportTiming?.totalStartedAt, exportTiming?.completedAt]);
+
   if (!isOpen) return null;
 
   const downloadLabel = format === 'apng'
@@ -37,6 +62,8 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
     : format === 'webp'
       ? t.title.replace(/GIF/gi, 'WebP')
       : t.title;
+  const formatSeconds = (startedAt: number, endedAt: number) => `${Math.max(0, (endedAt - startedAt) / 1000).toFixed(1)}s`;
+  const timingNow = exportTiming?.completedAt ?? clockNow;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -72,10 +99,26 @@ export const GenerationModal: React.FC<GenerationModalProps> = ({
                     style={{ width: `${Math.max(0, progress)}%` }}
                   />
                 </div>
-                <p className="text-sm font-medium text-gray-400 h-6 flex items-center justify-center gap-2">
+                <p className="text-sm font-medium text-gray-400 min-h-6 flex items-center justify-center gap-2 leading-5 text-center flex-wrap">
                   {progress < 100 && <Loader2 size={14} className="animate-spin text-blue-400" />}
                   {progressText}
                 </p>
+                {exportTiming && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="rounded-md border border-gray-800 bg-gray-900/70 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-gray-500">{timingLabels.stage}</div>
+                      <div className="mt-0.5 font-mono text-sm font-semibold text-blue-300">
+                        {formatSeconds(exportTiming.stageStartedAt, timingNow)}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-gray-800 bg-gray-900/70 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-gray-500">{timingLabels.total}</div>
+                      <div className="mt-0.5 font-mono text-sm font-semibold text-gray-200">
+                        {formatSeconds(exportTiming.totalStartedAt, timingNow)}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
