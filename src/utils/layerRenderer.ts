@@ -1,5 +1,5 @@
 import { CanvasConfig, FrameData, FrameTrack, LayerData, LayerTrack } from '../types';
-import { findFrameAtTime } from './frameTrackTiming';
+import { findFrameAtTime, getTrackFrameSegments, FrameTimeSegment, TimelineSegment } from './frameTrackTiming';
 import { flattenTrackLayers, getFrameLayers } from './layerHelpers';
 
 interface RenderFrameOptions {
@@ -10,12 +10,62 @@ interface RenderFrameOptions {
   sourceCanvasWidth?: number;
   sourceCanvasHeight?: number;
   imageCache?: Map<string, HTMLImageElement>;
+  trackSegments?: Map<string, FrameTimeSegment[]>;
+  resolvedTrackLayers?: Map<number, LayerData[]>;
   transparentKey?: {
     str: string;
     hex: number;
     alphaThreshold: number;
   } | null;
 }
+
+export const findSegmentAtTime = (segments: FrameTimeSegment[], timeMs: number): FrameTimeSegment | null => {
+  const time = Math.max(0, timeMs);
+  let low = 0;
+  let high = segments.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const segment = segments[mid];
+
+    if (time < segment.start) {
+      high = mid - 1;
+    } else if (time >= segment.end) {
+      low = mid + 1;
+    } else {
+      return segment;
+    }
+  }
+
+  return null;
+};
+
+export const buildTrackRenderCache = (
+  tracks: FrameTrack[],
+  timelineSegments: TimelineSegment[] | null
+) => {
+  const trackSegments = new Map(tracks.map(track => [track.id, getTrackFrameSegments(track.frames)]));
+  const resolvedTrackLayers = tracks.length > 1 && timelineSegments
+    ? new Map(timelineSegments.map(segment => {
+      const layers = tracks.flatMap(track => {
+        if (!track.visible) return [];
+
+        const trackSegment = findSegmentAtTime(trackSegments.get(track.id) ?? [], segment.start);
+        if (!trackSegment) return [];
+
+        return getFrameLayers(trackSegment.frame).map(layer => ({
+          ...layer,
+          locked: track.locked || layer.locked,
+          opacity: Math.min(1, Math.max(0, layer.opacity * track.opacity)),
+        }));
+      });
+
+      return [segment.start, layers] as const;
+    }))
+    : null;
+
+  return { trackSegments, resolvedTrackLayers };
+};
 
 const loadImage = (url: string, cache?: Map<string, HTMLImageElement>): Promise<HTMLImageElement> => {
   const cached = cache?.get(url);
@@ -250,10 +300,16 @@ export const renderFrameTracksToCanvas = async (
     }
   }
 
-  const layers = tracks.length > 0
+  const cachedLayers = typeof options.timelineTimeMs === 'number'
+    ? options.resolvedTrackLayers?.get(options.timelineTimeMs)
+    : undefined;
+  const layers = cachedLayers ?? (tracks.length > 0
     ? tracks.flatMap(track => {
       if (!track.visible) return [];
-      const segment = findFrameAtTime(track.frames, timeMs);
+      const cachedSegments = options.trackSegments?.get(track.id);
+      const segment = cachedSegments
+        ? findSegmentAtTime(cachedSegments, timeMs)
+        : findFrameAtTime(track.frames, timeMs);
       if (!segment) return [];
 
       return getFrameLayers(segment.frame).map(layer => ({
@@ -262,7 +318,7 @@ export const renderFrameTracksToCanvas = async (
         opacity: Math.min(1, Math.max(0, layer.opacity * track.opacity)),
       }));
     })
-    : (fallbackFrame ? getFrameLayers(fallbackFrame) : []);
+    : (fallbackFrame ? getFrameLayers(fallbackFrame) : []));
 
   if (options.transparentKey) {
     const layerCanvas = document.createElement('canvas');

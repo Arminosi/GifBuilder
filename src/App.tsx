@@ -14,6 +14,7 @@ import { AppHeader } from './components/AppHeader';
 import { useHistory } from './hooks/useHistory';
 import { generateGIF } from './utils/gifHelper';
 import { generateAPNG } from './utils/apngHelper';
+import type { ExportTimingSnapshot } from './utils/exportStatusTimer';
 import { generateFrameZip, extractFramesFromZip } from './utils/zipHelper';
 import { cloneFrameWithNewIds, createFrameFromImage, createImageLayer, createLayerTrack, flattenTrackLayers, getFrameLayers, syncFrameFromActiveLayer, updateFrameActiveLayer } from './utils/layerHelpers';
 import { renderFrameToCanvas, renderFrameTracksToCanvas } from './utils/layerRenderer';
@@ -543,6 +544,7 @@ const App: React.FC = () => {
   const [isZipping, setIsZipping] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState('');
+  const [exportTiming, setExportTiming] = useState<ExportTimingSnapshot | null>(null);
   const [generatedGif, setGeneratedGif] = useState<string | null>(null);
   const [generatedFormat, setGeneratedFormat] = useState<'gif' | 'apng' | 'webp'>('gif');
   const [dragActive, setDragActive] = useState(false);
@@ -3570,6 +3572,7 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setProgress(0);
     setProgressText(t.generation.preparing);
+    setExportTiming(null);
     setGeneratedGif(null);
     setGeneratedFormat(exportFormat);
 
@@ -3604,7 +3607,8 @@ const App: React.FC = () => {
           apngTexts,
           globalLayers,
           layerTracks,
-          frameTracks
+          frameTracks,
+          setExportTiming
         )
         : exportFormat === 'webp'
           ? await (async () => {
@@ -3617,7 +3621,8 @@ const App: React.FC = () => {
               webpTexts,
               globalLayers,
               layerTracks,
-              frameTracks
+              frameTracks,
+              setExportTiming
             );
           })()
         : await generateGIF(
@@ -3630,7 +3635,8 @@ const App: React.FC = () => {
           isGifTransparentEnabled ? gifTransparentColor : null,
           globalLayers,
           layerTracks,
-          frameTracks
+          frameTracks,
+          setExportTiming
         );
       const url = URL.createObjectURL(blob);
       setGeneratedGif(url);
@@ -4525,8 +4531,13 @@ const App: React.FC = () => {
         isOpen={!!generatedGif || isGenerating}
         progress={progress}
         progressText={progressText}
+        exportTiming={exportTiming}
         generatedGif={generatedGif}
         format={generatedFormat}
+        timingLabels={{
+          stage: language === 'zh' ? '当前阶段' : 'Stage',
+          total: language === 'zh' ? '总耗时' : 'Total'
+        }}
         onClose={() => setGeneratedGif(null)}
         t={{
           close: t.close,

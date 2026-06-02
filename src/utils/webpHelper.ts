@@ -1,6 +1,8 @@
 import { FrameData, CanvasConfig, FrameTrack, LayerData, LayerTrack } from '../types';
-import { createCompositionTimeline, findFrameAtTime } from './frameTrackTiming';
-import { renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
+import { createCompositionTimeline } from './frameTrackTiming';
+import { buildTrackRenderCache, findSegmentAtTime, renderFrameToCanvas, renderFrameTracksToCanvas } from './layerRenderer';
+import { createExportStatusTimer } from './exportStatusTimer';
+import type { ExportTimingSnapshot } from './exportStatusTimer';
 
 export interface WebPStatusTexts {
   initializing: string;
@@ -148,7 +150,8 @@ export const generateWebP = async (
   texts?: WebPStatusTexts,
   globalLayers: LayerData[] = [],
   layerTracks: LayerTrack[] = [],
-  frameTracks: FrameTrack[] = []
+  frameTracks: FrameTrack[] = [],
+  onTiming?: (timing: ExportTimingSnapshot) => void
 ): Promise<Blob> => {
   const t = texts || {
     initializing: 'Initializing WebP encoder...',
@@ -162,8 +165,9 @@ export const generateWebP = async (
       return typeof args[number] !== 'undefined' ? String(args[number]) : match;
     });
   };
+  const statusTimer = createExportStatusTimer(onStatus, onTiming);
 
-  if (onStatus) onStatus(t.initializing);
+  statusTimer.report(t.initializing, 'initializing');
   onProgress(0);
 
   const canvas = document.createElement('canvas');
@@ -175,7 +179,7 @@ export const generateWebP = async (
     throw new Error('Could not create canvas context');
   }
 
-  if (onStatus) onStatus(t.processingFrames);
+  statusTimer.report(t.processingFrames, 'processing');
 
   const frameChunks: Uint8Array[] = [];
   let hasAlpha = Boolean(config.transparent);
@@ -185,6 +189,13 @@ export const generateWebP = async (
   const firstTrackFrame = frameTracks.flatMap(track => track.frames)[0];
   const compositionSegments = frameTracks.length > 0 && (frames[0] || firstTrackFrame)
     ? createCompositionTimeline(frameTracks, frames)
+    : null;
+  const { trackSegments, resolvedTrackLayers } = buildTrackRenderCache(frameTracks, compositionSegments);
+  const singleTrackFrameBySegment = frameTracks.length === 1 && compositionSegments
+    ? compositionSegments.map(segment => findSegmentAtTime(trackSegments.get(frameTracks[0].id) ?? [], segment.start)?.frame ?? null)
+    : null;
+  const singleTrackFrameIndexById = singleTrackFrameBySegment
+    ? new Map(frameTracks[0].frames.map((frame, index) => [frame.id, index]))
     : null;
   const framesToRender = compositionSegments
     ? compositionSegments.map((segment, index) => ({
@@ -196,21 +207,21 @@ export const generateWebP = async (
 
   for (let i = 0; i < framesToRender.length; i++) {
     const frame = framesToRender[i];
-    if (onStatus) onStatus(format(t.processingFrameN, i + 1, framesToRender.length));
+    statusTimer.report(format(t.processingFrameN, i + 1, framesToRender.length), 'processing');
 
     if (frameTracks.length > 1) {
       await renderFrameTracksToCanvas(frameTracks, frame, config, ctx, {
         timelineFrameIndex: i,
         timelineTimeMs: compositionSegments?.[i]?.start,
         imageCache,
+        trackSegments,
+        resolvedTrackLayers: resolvedTrackLayers ?? undefined,
       });
     } else {
-      const singleTrackFrame = frameTracks.length === 1 && compositionSegments?.[i]
-        ? findFrameAtTime(frameTracks[0].frames, compositionSegments[i].start)?.frame
-        : null;
+      const singleTrackFrame = singleTrackFrameBySegment?.[i] ?? null;
       await renderFrameToCanvas(singleTrackFrame ?? frame, config, ctx, {
         timelineFrameIndex: singleTrackFrame
-          ? frameTracks[0].frames.findIndex(item => item.id === singleTrackFrame.id)
+          ? (singleTrackFrameIndexById?.get(singleTrackFrame.id) ?? 0)
           : i,
         timelineTimeMs: singleTrackFrame ? undefined : compositionSegments?.[i]?.start,
         globalLayers,
@@ -238,6 +249,7 @@ export const generateWebP = async (
     onProgress((i + 1) / framesToRender.length);
   }
 
+  statusTimer.report('Assembling WebP...', 'encoding');
   const vp8xPayload = new Uint8Array(10);
   vp8xPayload[0] = 0x02 | (hasAlpha ? 0x10 : 0); // Animation flag, plus alpha when present.
   writeUint24LE(vp8xPayload, 4, config.width - 1);
@@ -263,7 +275,7 @@ export const generateWebP = async (
   output.set(riffPayload, 8);
 
   onProgress(1);
-  if (onStatus) onStatus(t.completed);
+  statusTimer.complete(t.completed);
 
   return new Blob([output], { type: 'image/webp' });
 };
