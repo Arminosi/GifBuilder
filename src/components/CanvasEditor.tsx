@@ -9,6 +9,7 @@ interface CanvasEditorProps {
   frame: FrameData | null;
   frameIndex?: number;
   previewBitmap?: CanvasImageSource | null;
+  onPreviewBitmapInvalid?: (bitmap: CanvasImageSource) => void;
   globalLayers?: LayerData[];
   layerTracks?: LayerTrack[];
   activeGlobalLayerId?: string | null;
@@ -30,30 +31,44 @@ const CachedPreviewCanvas: React.FC<{
   bitmap: CanvasImageSource;
   width: number;
   height: number;
-}> = ({ bitmap, width, height }) => {
+  onInvalid?: (bitmap: CanvasImageSource) => void;
+}> = ({ bitmap, width, height, onInvalid }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    canvas.width = Math.max(1, width);
-    canvas.height = Math.max(1, height);
+    const nextWidth = Math.max(1, width);
+    const nextHeight = Math.max(1, height);
+    if (canvas.width !== nextWidth) {
+      canvas.width = nextWidth;
+    }
+    if (canvas.height !== nextHeight) {
+      canvas.height = nextHeight;
+    }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const nextCanvas = document.createElement('canvas');
+    nextCanvas.width = canvas.width;
+    nextCanvas.height = canvas.height;
+    const nextCtx = nextCanvas.getContext('2d');
+    if (!nextCtx) return;
+
     try {
+      nextCtx.drawImage(bitmap, 0, 0, nextCanvas.width, nextCanvas.height);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(nextCanvas, 0, 0);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'InvalidStateError') {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        onInvalid?.(bitmap);
         return;
       }
 
       throw error;
     }
-  }, [bitmap, width, height]);
+  }, [bitmap, width, height, onInvalid]);
 
   return (
     <canvas
@@ -160,6 +175,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   frame, 
   frameIndex, 
   previewBitmap,
+  onPreviewBitmapInvalid,
   globalLayers = [],
   layerTracks = [],
   activeGlobalLayerId,
@@ -730,6 +746,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             bitmap={previewBitmap}
             width={config.width}
             height={config.height}
+            onInvalid={onPreviewBitmapInvalid}
           />
         </div>
       </div>
@@ -781,6 +798,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             bitmap={previewBitmap}
             width={config.width}
             height={config.height}
+            onInvalid={onPreviewBitmapInvalid}
           />
         ) : [...frameLayers, ...visibleGlobalLayers].map((layer) => {
           const isActiveLayer = layer.id === activeLayer?.id;
