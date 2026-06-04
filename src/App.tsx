@@ -1150,7 +1150,7 @@ const App: React.FC = () => {
     if (files.length === 0) return;
 
     try {
-      showLoadingNotification(language === 'zh' ? '姝ｅ湪璇诲彇瑙嗛淇℃伅...' : 'Reading video info...');
+      showLoadingNotification(language === 'zh' ? '正在读取视频信息...' : 'Reading video info...');
       const metadata = await getVideoMetadata(files[0]);
       const endTime = Math.min(metadata.duration || 5, 5);
       const previewUrl = URL.createObjectURL(files[0]);
@@ -1177,7 +1177,7 @@ const App: React.FC = () => {
       hideNotification();
     } catch (error) {
       console.error('Failed to read video metadata', error);
-      showNotification(language === 'zh' ? '鏃犳硶璇诲彇瑙嗛鏂囦欢' : 'Unable to read video file');
+      showNotification(language === 'zh' ? '无法读取视频文件' : 'Unable to read video file');
     }
   };
 
@@ -1251,7 +1251,7 @@ const App: React.FC = () => {
     };
 
     if (normalizedSettings.endTime <= normalizedSettings.startTime) {
-      showNotification(language === 'zh' ? '鍑哄叆鐐逛笉鍚堟硶锛氬嚭鐐归渶瑕佸湪鍏ョ偣涔嬪悗' : 'Invalid in/out points: out point must be after in point');
+      showNotification(language === 'zh' ? '出入点不合法：出点需要在入点之后' : 'Invalid in/out points: out point must be after in point');
       return;
     }
 
@@ -1264,11 +1264,11 @@ const App: React.FC = () => {
 
       for (let i = 0; i < importConfig.files.length; i++) {
         const file = importConfig.files[i];
-        showLoadingNotification(language === 'zh' ? `姝ｅ湪瀵煎叆瑙嗛 ${i + 1}/${importConfig.files.length}...` : `Importing video ${i + 1}/${importConfig.files.length}...`);
+        showLoadingNotification(language === 'zh' ? `正在导入视频 ${i + 1}/${importConfig.files.length}...` : `Importing video ${i + 1}/${importConfig.files.length}...`);
 
         const videoFrames = await extractVideoFrames(file, normalizedSettings, (current, total) => {
           showLoadingNotification(language === 'zh'
-            ? `姝ｅ湪鎶藉抚 ${current}/${total}...`
+            ? `正在抽帧 ${current}/${total}...`
             : `Extracting frames ${current}/${total}...`);
         });
 
@@ -1281,7 +1281,7 @@ const App: React.FC = () => {
       hideNotification();
 
       if (newFrames.length === 0) {
-        showNotification(language === 'zh' ? '娌℃湁浠庤棰戜腑鎶藉彇鍒板抚' : 'No frames were extracted from the video');
+        showNotification(language === 'zh' ? '没有从视频中抽取到帧' : 'No frames were extracted from the video');
         return;
       }
 
@@ -1360,7 +1360,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Failed to import video frames', error);
       hideNotification();
-      showNotification(language === 'zh' ? '瑙嗛瀵煎叆澶辫触' : 'Failed to import video');
+      showNotification(language === 'zh' ? '视频导入失败' : 'Failed to import video');
     } finally {
       setIsImportingVideo(false);
     }
@@ -3445,7 +3445,7 @@ const App: React.FC = () => {
     const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
 
     if (!ctx) {
-      showNotification(language === 'zh' ? '鏃犳硶鎵弿鐢诲竷鍍忕礌' : 'Unable to scan canvas pixels');
+      showNotification(language === 'zh' ? '无法扫描画布像素' : 'Unable to scan canvas pixels');
       return;
     }
 
@@ -3539,7 +3539,7 @@ const App: React.FC = () => {
       showNotification(t.autoCropCanvasSuccess);
     } catch (error) {
       console.error('Failed to auto crop canvas', error);
-      showNotification(language === 'zh' ? '鑷姩瑁佸垏鐢诲竷澶辫触' : 'Failed to auto crop canvas');
+      showNotification(language === 'zh' ? '自动裁切画布失败' : 'Failed to auto crop canvas');
     } finally {
       setIsAutoCroppingCanvas(false);
     }
@@ -3588,15 +3588,15 @@ const App: React.FC = () => {
       };
       const apngTexts = {
         ...t.generation,
-        title: language === 'zh' ? '姝ｅ湪鐢熸垚 APNG...' : 'Generating APNG...',
-        initializing: language === 'zh' ? '姝ｅ湪鍒濆鍖?APNG 缂栫爜鍣?..' : 'Initializing APNG encoder...',
-        rendering: language === 'zh' ? '姝ｅ湪娓叉煋 APNG... {0}%' : 'Rendering APNG... {0}%'
+        title: language === 'zh' ? '正在生成 APNG...' : 'Generating APNG...',
+        initializing: language === 'zh' ? '正在初始化 APNG 编码器...' : 'Initializing APNG encoder...',
+        rendering: language === 'zh' ? '正在渲染 APNG... {0}%' : 'Rendering APNG... {0}%'
       };
       const webpTexts = {
         ...t.generation,
-        title: language === 'zh' ? '姝ｅ湪鐢熸垚 WebP...' : 'Generating WebP...',
-        initializing: language === 'zh' ? '姝ｅ湪鍒濆鍖?WebP 缂栫爜鍣?..' : 'Initializing WebP encoder...',
-        rendering: language === 'zh' ? '姝ｅ湪娓叉煋 WebP... {0}%' : 'Rendering WebP... {0}%'
+        title: language === 'zh' ? '正在生成 WebP...' : 'Generating WebP...',
+        initializing: language === 'zh' ? '正在初始化 WebP 编码器...' : 'Initializing WebP encoder...',
+        rendering: language === 'zh' ? '正在渲染 WebP... {0}%' : 'Rendering WebP... {0}%'
       };
       const blob = exportFormat === 'apng'
         ? await generateAPNG(
@@ -4607,13 +4607,13 @@ const App: React.FC = () => {
       >
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
-            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '瀵煎叆绱犳潗' : 'Imported media'}</div>
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '导入素材' : 'Imported media'}</div>
             <div className="font-mono font-semibold text-blue-300">
               {canvasResizeConfirm?.imageWidth ?? 0} x {canvasResizeConfirm?.imageHeight ?? 0}
             </div>
           </div>
           <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
-            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '褰撳墠鐢诲竷' : 'Current canvas'}</div>
+            <div className="mb-1 text-xs text-gray-500">{language === 'zh' ? '当前画布' : 'Current canvas'}</div>
             <div className="font-mono font-semibold text-gray-300">
               {canvasResizeConfirm?.canvasWidth ?? canvasConfig.width} x {canvasResizeConfirm?.canvasHeight ?? canvasConfig.height}
             </div>

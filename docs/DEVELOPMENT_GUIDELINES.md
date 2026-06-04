@@ -1,5 +1,33 @@
 # Development Guidelines
 
+## Text Encoding
+
+All source files, documentation, and project configuration must be UTF-8.
+
+This project includes Chinese UI strings, so encoding mistakes can easily create mojibake such as `姝ｅ湪`, `鏃犳硶`, `鐢诲竷`, `瀵煎叆`, `鍒濆`, `鈫`, or `�`. Treat any such text in user-facing strings as a bug.
+
+Editing rules:
+
+- Use `apply_patch` for normal source edits.
+- Do not use PowerShell as a text editor for source files. PowerShell is fine for running commands, tests, builds, and searches, but avoid `Set-Content`, shell redirection, or command-built replacement pipelines for files that may contain non-ASCII text.
+- Do not paste large Chinese strings directly into shell commands.
+- For bulk rewrites, use Node or Python and explicitly read/write UTF-8:
+
+```ts
+fs.readFileSync(path, 'utf8');
+fs.writeFileSync(path, content, 'utf8');
+```
+
+```py
+Path(path).read_text(encoding='utf-8')
+Path(path).write_text(content, encoding='utf-8')
+```
+
+Verification:
+
+- Run `npm run check:encoding` after changing user-facing text, translations, docs, import/export status strings, or notification messages.
+- Run `npm run build` before handing off code changes.
+
 ## Confirmation UI
 
 All user-facing confirmation prompts must use the shared `ConfirmDialog` component from `src/components/ConfirmDialog.tsx`.
