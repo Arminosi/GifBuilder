@@ -481,6 +481,32 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     timelineSegments,
   ]);
 
+  const handleInvalidPreviewBitmap = React.useCallback((bitmap: CanvasImageSource) => {
+    let removedCurrentSegment = false;
+
+    compositionBitmapCacheRef.current.forEach((cachedBitmap, key) => {
+      if (cachedBitmap !== bitmap) return;
+
+      if (key === currentTimelineCacheKey) {
+        removedCurrentSegment = true;
+      }
+      compositionBitmapCacheRef.current.delete(key);
+    });
+
+    if (lastCompositionBitmapRef.current === bitmap) {
+      lastCompositionBitmapRef.current = null;
+    }
+    if (currentCompositionBitmapRef.current === bitmap) {
+      currentCompositionBitmapRef.current = null;
+    }
+
+    setCompositionCacheVersion(version => version + 1);
+
+    if (removedCurrentSegment && currentTimelineSegment) {
+      void renderCompositionSegment(currentTimelineSegment);
+    }
+  }, [currentTimelineCacheKey, currentTimelineSegment, renderCompositionSegment]);
+
   if (!isVisible) return null;
 
   return (
@@ -550,6 +576,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         frame={displayedCanvasFrame}
         frameIndex={currentTimelineFrameIndex >= 0 ? currentTimelineFrameIndex : undefined}
         previewBitmap={canvasPreviewBitmap}
+        onPreviewBitmapInvalid={handleInvalidPreviewBitmap}
         config={config}
         onUpdate={onCanvasUpdate}
         onSelectLayer={onSelectLayer}

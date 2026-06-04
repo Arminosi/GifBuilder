@@ -14,4 +14,4 @@ Before changing code, read `docs/DEVELOPMENT_GUIDELINES.md`.
 - After editing user-facing text, run `npm run check:encoding`.
 - Before finishing code changes, run `npm run build`.
 
-These rules exist to prevent mojibake such as `姝ｅ湪`, `鏃犳硶`, `鐢诲竷`, `瀵煎叆`, and replacement characters from entering the UI.
+These rules exist to prevent mojibake and replacement characters from entering the UI.
