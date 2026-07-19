@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crosshair, Layout, Minimize2, Play, ScanEye } from 'lucide-react';
+import { BoxSelect, Crosshair, Layout, Minimize2, Play, ScanEye } from 'lucide-react';
 import type { CanvasConfig, FrameData, FrameTrack, LayerData, TimelineSpacingMode } from '../types';
 import type { FrameLabels, TranslationSchema } from '../utils/translations';
 import { createCompositionTimeline, findFrameAtTime, getCompositionDuration, getFrameStartTime, getTimelineSegmentIndexAtTime } from '../utils/frameTrackTiming';
@@ -45,6 +45,8 @@ interface CanvasWorkspaceProps {
     linkSelection: string;
     enableAutoJumpToSelection: string;
     disableAutoJumpToSelection: string;
+    showDragBox: string;
+    hideDragBox: string;
     hideEditor: string;
     selectFrameToEdit: string;
     frameInfo: string;
@@ -150,7 +152,11 @@ const scheduleCloseCachedSource = (source: CanvasImageSource) => {
 
 const createCachedSource = async (canvas: HTMLCanvasElement): Promise<CanvasImageSource> => {
   if (typeof createImageBitmap === 'function') {
-    return createImageBitmap(canvas);
+    try {
+      return await createImageBitmap(canvas);
+    } catch (error) {
+      console.warn('Failed to create preview bitmap, retaining the rendered canvas', error);
+    }
   }
 
   return canvas;
@@ -214,6 +220,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const timelineSegments = createCompositionTimeline(frameTracks, frames);
   const compositionDuration = getCompositionDuration(frameTracks);
   const isMultiTrackMode = frameTracks.length > 1;
+  const usesRenderedPlaybackCache = frameTracks.length > 0;
   const compositionBitmapCacheRef = React.useRef<Map<number, CanvasImageSource>>(new Map());
   const compositionRenderQueueRef = React.useRef<Set<number>>(new Set());
   const compositionRenderPromisesRef = React.useRef<Map<number, Promise<void>>>(new Map());
@@ -223,6 +230,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const compositionCacheGenerationRef = React.useRef(0);
   const [compositionCacheVersion, setCompositionCacheVersion] = React.useState(0);
   const [isPrimingPlayback, setIsPrimingPlayback] = React.useState(false);
+  const [showDragBox, setShowDragBox] = React.useState(true);
   const timelineFrames = timelineSegments.map((segment, index) => ({
     id: `timeline-segment-${index}`,
     duration: segment.duration,
@@ -324,16 +332,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         nextCache.set(key, bitmap);
 
         while (nextCache.size > MAX_COMPOSITION_CACHE_SIZE) {
-          const oldestKey = nextCache.keys().next().value;
-          if (typeof oldestKey !== 'number') break;
-          const oldestSource = nextCache.get(oldestKey);
-          if (oldestSource && lastCompositionBitmapRef.current === oldestSource) {
-            lastCompositionBitmapRef.current = null;
-          }
-          if (oldestSource && currentCompositionBitmapRef.current === oldestSource) {
-            currentCompositionBitmapRef.current = null;
-          }
-          if (oldestSource) scheduleCloseCachedSource(oldestSource);
+          const oldestDisposableEntry = Array.from(nextCache.entries()).find(([, source]) => (
+            source !== lastCompositionBitmapRef.current
+            && source !== currentCompositionBitmapRef.current
+          ));
+          if (!oldestDisposableEntry) break;
+
+          const [oldestKey, oldestSource] = oldestDisposableEntry;
+          scheduleCloseCachedSource(oldestSource);
           nextCache.delete(oldestKey);
         }
 
@@ -368,7 +374,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   }, [compositionCacheKey]);
 
   React.useEffect(() => {
-    if (!isVisible || !isMultiTrackMode || timelineSegments.length === 0) return;
+    if (!isVisible || !usesRenderedPlaybackCache || timelineSegments.length === 0) return;
 
     let cancelled = false;
     const lookahead = isPlaying ? PLAYBACK_CACHE_LOOKAHEAD : IDLE_CACHE_LOOKAHEAD;
@@ -396,7 +402,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isVisible, isMultiTrackMode, isPlaying, currentTimelineTimeMs, timelineSignature, compositionCacheKey, renderCompositionSegment]);
+  }, [isVisible, usesRenderedPlaybackCache, isPlaying, currentTimelineTimeMs, timelineSignature, compositionCacheKey, renderCompositionSegment]);
 
   React.useEffect(() => {
     return () => {
@@ -416,7 +422,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       activeTrackFrameAtCurrentTime ?? selectedFrame
     )
     : (frameTracks.length > 0 ? activeTrackFrameAtCurrentTime : selectedFrame);
-  const cachedCompositionBitmap = isMultiTrackMode
+  const cachedCompositionBitmap = usesRenderedPlaybackCache
     ? compositionBitmapCacheRef.current.get(currentTimelineCacheKey) ?? null
     : null;
   React.useEffect(() => {
@@ -433,7 +439,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
   }, [cachedCompositionBitmap]);
   const stableCompositionBitmap = cachedCompositionBitmap
-    ?? (isMultiTrackMode && canvasFrame && (isPlaying || previewTimeMs !== null) ? lastCompositionBitmapRef.current : null);
+    ?? (usesRenderedPlaybackCache && canvasFrame && (isPlaying || previewTimeMs !== null) ? lastCompositionBitmapRef.current : null);
   React.useEffect(() => {
     currentCompositionBitmapRef.current = stableCompositionBitmap;
   }, [stableCompositionBitmap]);
@@ -452,7 +458,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       return;
     }
 
-    if (!isMultiTrackMode || timelineSegments.length === 0) {
+    if (!usesRenderedPlaybackCache || timelineSegments.length === 0) {
       onPlayingChange(true);
       return;
     }
@@ -473,12 +479,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
   }, [
     currentTimelineTimeMs,
-    isMultiTrackMode,
     isPlaying,
     isPrimingPlayback,
     onPlayingChange,
     renderCompositionSegment,
     timelineSegments,
+    usesRenderedPlaybackCache,
   ]);
 
   const handleInvalidPreviewBitmap = React.useCallback((bitmap: CanvasImageSource) => {
@@ -548,6 +554,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => setShowDragBox(visible => !visible)}
+                aria-pressed={showDragBox}
+                className={'p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ' + (showDragBox
+                  ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                  : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300')}
+                title={showDragBox ? labels.hideDragBox : labels.showDragBox}
+              >
+                <BoxSelect size={16} />
+              </button>
+              <button
+                type="button"
                 onClick={handlePlaybackClick}
                 disabled={isPrimingPlayback}
                 className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${isPlaying
@@ -584,6 +601,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         emptyMessage={labels.selectFrameToEdit}
         isPreview={isPlaying || isCompositionOnlyPreview}
         showBlankCanvas={shouldShowBlankCanvas}
+        showDragBox={showDragBox}
         isEyeDropperActive={isEyeDropperActive || isGifEyeDropperActive || isBgColorEyeDropperActive}
         onColorPick={onColorPick}
         gifTransparentColor={gifTransparentColor}

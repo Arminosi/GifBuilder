@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { FrameData, CanvasConfig, LayerData, LayerTrack } from '../types';
 import { FrameLabels } from '../utils/translations';
 import { flattenTrackLayers, getActiveLayer, getFrameLayers } from '../utils/layerHelpers';
@@ -21,6 +21,7 @@ interface CanvasEditorProps {
   emptyMessage: string;
   isPreview?: boolean;
   showBlankCanvas?: boolean;
+  showDragBox?: boolean;
   isEyeDropperActive?: boolean;
   onColorPick?: (color: string) => void;
   gifTransparentColor?: string | null;
@@ -35,7 +36,7 @@ const CachedPreviewCanvas: React.FC<{
 }> = ({ bitmap, width, height, onInvalid }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -187,6 +188,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   emptyMessage, 
   isPreview,
   showBlankCanvas,
+  showDragBox = true,
   isEyeDropperActive,
   onColorPick,
   gifTransparentColor,
@@ -860,7 +862,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           onTouchMove={handleTouchMove}
         >
           {/* Resize Handles & Border */}
-          {!isPreview && !isEyeDropperActive && !activeLayer?.locked && (
+          {showDragBox && !isPreview && !isEyeDropperActive && !activeLayer?.locked && (
             <>
               {/* Border */}
               <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none" />

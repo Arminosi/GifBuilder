@@ -4227,6 +4227,8 @@ const App: React.FC = () => {
               linkSelection: t.linkSelection,
               enableAutoJumpToSelection: language === 'zh' ? '选中帧时自动定位时间线' : 'Auto-jump timeline to selected frame',
               disableAutoJumpToSelection: language === 'zh' ? '关闭选中帧自动定位时间线' : 'Disable auto-jump to selected frame',
+              showDragBox: language === 'zh' ? '显示拖拽框' : 'Show transform controls',
+              hideDragBox: language === 'zh' ? '隐藏拖拽框' : 'Hide transform controls',
               hideEditor: t.hideEditor,
               selectFrameToEdit: t.selectFrameToEdit,
               frameInfo: t.frameInfo,
